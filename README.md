@@ -1,0 +1,2 @@
+# IMP project - Morse code bluetooth receiver
+Project based on ESP-IDF (https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html), which is needed for compilation and flashing the program to MCU.
