@@ -1,5 +1,10 @@
-var targetBTchar = null;
-var targetBTserver = null;
+const serviceId = 'eeccffaa-0000-0000-0000-000000000000';
+
+const minIntervalMs = 2000;
+
+var BTserver = null;
+var letterBTchar = null;
+var volumeBTchar = null;
 var jobChain = null;
 
 function isBtSupported() {
@@ -13,14 +18,14 @@ function setStatus(newStatusHTML) {
 
 
 function disconnectedBtns() {
-    document.getElementById('disconnect').disabled = false;
-    document.getElementById('connect').disabled = true;
+    document.getElementById('disconnect').disabled = true;
+    document.getElementById('connect').disabled = false;
 }
 
 
 function connectedBtns() {
-    document.getElementById('disconnect').disabled = true;
-    document.getElementById('connect').disabled = false;
+    document.getElementById('disconnect').disabled = false;
+    document.getElementById('connect').disabled = true;
 }
 
 
@@ -79,8 +84,11 @@ function setConnectButtonState(newState = false) {
 
 async function connect() {
     let options = {
+        /*filters : [
+            { services : [serviceId]}
+        ]*/
         acceptAllDevices : true,
-        optionalServices : ['000000ff-0000-1000-8000-00805f9b34fb']
+        optionalServices : [serviceId]
     };
 
     await navigator.bluetooth.requestDevice(options).then(
@@ -88,14 +96,17 @@ async function connect() {
             console.log(device);
             device.gatt.connect().then((server) => {
                 console.log(server);
-                server.getPrimaryService('000000ff-0000-1000-8000-00805f9b34fb').then((service) => {
+                server.getPrimaryService(0xabcd).then((service) => {
                     console.log(service);
                     service.getCharacteristics().then(chars => {
                         console.log(chars);
-                        targetBTserver = server;
-                        targetBTchar = chars[0];
+                        BTserver = server;
+                        letterBTchar = chars[0];
+                        volumeBTchar = chars[1];
 
                         connectedBtns();
+
+                        setStatus("Connected!");
                     });
                 });
             });
@@ -109,10 +120,16 @@ async function connect() {
 
 
 function disconnect() {
-    if(targetBTserver != null) {
-        targetBTserver.disconnect();
+    if(BTserver != null) {
+        BTserver.disconnect();
 
+        setStatus("Disconnected");
         disconnectedBtns();
+
+        jobChain = null;
+        BTserver = null;
+        letterBTchar = null;
+        volumeBTchar = null;
     }
 }
 
@@ -131,33 +148,40 @@ function addWriteJob(...bufferToBeSended) {
     }
     
     jobChain = jobChain.then(
-        () => targetBTchar.writeValueWithoutResponse(Uint8Array.of(...bufferToBeSended)).then(
-            () => {
-            },
-            (error) => {
-                console.log(error);
-            },
-        ),
-        (error) => {
+        () => targetBTchar.writeValueWithoutResponse(Uint8Array.of(...bufferToBeSended)).catch((error) => {
             console.log(error);
-        },
+
+            setStatus("Disconnected");
+            disconnectedBtns();
+
+            jobChain = null;
+            BTserver = null;
+            letterBTchar = null;
+            volumeBTchar = null;
+        })
     );
 
-    /*
     jobChain = jobChain.then(() => {
         return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve('Next')
-                console.log('Next')}, 
-            minIntervalMs);
+            setTimeout(resolve, minIntervalMs);
         });
     });
-    */
+}
+
+
+function readVolume() {
+    volumeBTchar.readValue().then(
+    (value) => {
+        console.log(value.getUint8(0));
+    },
+    (error) => {
+        console.log(error);
+    });
 }
 
 
 document.addEventListener("keydown", (event) => {
-    if(targetBTchar != null && targetBTserver != null) {
+    if(letterBTchar != null && BTserver != null) {
         console.log("Adding to the queue: " + event.key);
 
         let charToBeSended = event.key.charCodeAt(0);
