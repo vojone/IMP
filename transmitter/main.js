@@ -1,3 +1,7 @@
+var targetBTchar = null;
+var targetBTserver = null;
+var jobChain = null;
+
 function isBtSupported() {
     return (navigator.bluetooth) ? true : false;
 }
@@ -5,6 +9,18 @@ function isBtSupported() {
 
 function setStatus(newStatusHTML) {
     document.getElementById('status').innerHTML = `Status: ${newStatusHTML}`;
+}
+
+
+function disconnectedBtns() {
+    document.getElementById('disconnect').disabled = false;
+    document.getElementById('connect').disabled = true;
+}
+
+
+function connectedBtns() {
+    document.getElementById('disconnect').disabled = true;
+    document.getElementById('connect').disabled = false;
 }
 
 
@@ -63,12 +79,26 @@ function setConnectButtonState(newState = false) {
 
 async function connect() {
     let options = {
-        acceptAllDevices : true
+        acceptAllDevices : true,
+        optionalServices : ['000000ff-0000-1000-8000-00805f9b34fb']
     };
 
     await navigator.bluetooth.requestDevice(options).then(
         (device) => {
             console.log(device);
+            device.gatt.connect().then((server) => {
+                console.log(server);
+                server.getPrimaryService('000000ff-0000-1000-8000-00805f9b34fb').then((service) => {
+                    console.log(service);
+                    service.getCharacteristics().then(chars => {
+                        console.log(chars);
+                        targetBTserver = server;
+                        targetBTchar = chars[0];
+
+                        connectedBtns();
+                    });
+                });
+            });
         },
         (error) => {
             setStatus(`Cannot connect!`);
@@ -78,7 +108,63 @@ async function connect() {
 }
 
 
+function disconnect() {
+    if(targetBTserver != null) {
+        targetBTserver.disconnect();
+
+        disconnectedBtns();
+    }
+}
+
+
 async function startup() {
     let result = await checkBtSupport();
     setConnectButtonState(!result);
 }
+
+
+function addWriteJob(...bufferToBeSended) {
+    if(jobChain == null) {
+        jobChain = new Promise((resolve) => {
+            resolve("Start");
+        });
+    }
+    
+    jobChain = jobChain.then(
+        () => targetBTchar.writeValueWithoutResponse(Uint8Array.of(...bufferToBeSended)).then(
+            () => {
+            },
+            (error) => {
+                console.log(error);
+            },
+        ),
+        (error) => {
+            console.log(error);
+        },
+    );
+
+    /*
+    jobChain = jobChain.then(() => {
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                resolve('Next')
+                console.log('Next')}, 
+            minIntervalMs);
+        });
+    });
+    */
+}
+
+
+document.addEventListener("keydown", (event) => {
+    if(targetBTchar != null && targetBTserver != null) {
+        console.log("Adding to the queue: " + event.key);
+
+        let charToBeSended = event.key.charCodeAt(0);
+
+        addWriteJob(charToBeSended);
+    }
+    else {
+        disconnectedBtns();
+    }  
+});
