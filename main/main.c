@@ -329,16 +329,23 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         esp_gatt_rsp_t response; 
         memset(&response, 0, sizeof(esp_gatt_rsp_t)); //< Initialize the structure for the response
         
-        response.handle = params->read.handle;
+        response.attr_value.handle = params->read.handle;
 
-        err = esp_ble_gatts_get_attr_value( //< Read the value of characteristic
-            response.handle, 
-            &(response.attr_value.len), 
-            &(response.attr_value.value)
-        );
+         //Read the initial value
+        length = 0;
+
+        err = esp_ble_gatts_get_attr_value(params->read.handle, &length, &char_byte); //< Read the attribute value of characteristic
         if(err != ESP_OK) {
             ESP_LOGE(MODULE_TAG, "%s: esp_ble_gatts_get_attr_value failed (%d)", __func__, err);
         }
+
+        ESP_LOGI(MODULE_TAG, "The char length=%x", length);
+        for(int i = 0; i < length; i++) {
+            ESP_LOGI(MODULE_TAG, "char[%d]=%x", i, char_byte[i]);
+        }
+
+        response.attr_value.len = length;
+        response.attr_value.value[0] = char_byte[0];
 
         esp_ble_gatts_send_response( //< Send the  response
             gatts_if, 
@@ -348,6 +355,10 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
             &response
         );
 
+        break;
+
+    case ESP_GATTS_WRITE_EVT:
+        //TODO
         break;
 
     case ESP_GATTS_RESPONSE_EVT:

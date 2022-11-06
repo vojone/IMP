@@ -172,6 +172,7 @@ function addWriteJob(...bufferToBeSended) {
 function readVolume() {
     volumeBTchar.readValue().then(
     (value) => {
+        console.log(value);
         console.log(value.getUint8(0));
     },
     (error) => {
