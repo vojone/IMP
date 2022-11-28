@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/queue.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 
@@ -20,6 +21,9 @@
 #include "esp_gattc_api.h"
 #include "esp_gatts_api.h"
 #include "esp_gatt_common_api.h"
+
+QueueHandle_t queue;
+
 
 #define MODULE_TAG "MORSE_CODE"
 
@@ -180,6 +184,8 @@ static uint8_t adv_config_done = 0;
 
 void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *params) {
     esp_err_t err;
+
+    char buffer[1];
 
     switch (evt)
     {
@@ -358,7 +364,9 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         break;
 
     case ESP_GATTS_WRITE_EVT:
-        //TODO
+        ESP_LOGI(MODULE_TAG, "WRITE_EVT, status=%d", params->rsp.status);
+        buffer[0] = params->write.value[0];
+        xQueueSend(queue, (void*)buffer, (TickType_t)0); 
         break;
 
     case ESP_GATTS_RESPONSE_EVT:
@@ -520,7 +528,23 @@ esp_err_t bluetooth_init() {
 
 //End of the part based on https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/bluedroid/ble/gatt_server/tutorial/Gatt_Server_Example_Walkthrough.md
 
+
+void morse_beep(void *arg) {
+    char buffer[1];
+    while(1) {
+        if(xQueueReceive(queue, &(buffer), (TickType_t)5)) {
+            printf("MORSE_BEEP %s\n", buffer);
+            vTaskDelay(1000/portTICK_RATE_MS);
+        }
+    }
+}
+
+
+TaskHandle_t morse_beep_handle = NULL;;
+
 void app_main(void) {
+    queue = xQueueCreate(10, 1);
+
     esp_err_t err = nvs_flash_init();
     if(err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) { //< Potentially recoverable errors
         ESP_ERROR_CHECK(nvs_flash_erase()); //< Try to erase NVS and then init it again
@@ -529,4 +553,6 @@ void app_main(void) {
     ESP_ERROR_CHECK(err);
 
     bluetooth_init();
+
+    xTaskCreatePinnedToCore(morse_beep, "Demo_Task2", 4096, NULL, 10, &morse_beep_handle, 1);
 }

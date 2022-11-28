@@ -1,11 +1,12 @@
-const serviceId = 'eeccffaa-0000-0000-0000-000000000000';
+const deviceName = 'Morse code - receiver';
+const serviceId = '0000abcd-0000-1000-8000-00805f9b34fb'; //Our custom service UUID + base UUID
 
-const minIntervalMs = 2000;
+const minIntervalMs = 500;
 
-var BTserver = null;
-var letterBTchar = null;
-var volumeBTchar = null;
-var jobChain = null;
+var BTserver = null; //BluetoothRemoteGATTServer
+var letterBTchar = null; //Characteristic of BTserver for writing letters
+var volumeBTchar = null; //Characteristic of BTserver for reading current volume
+var jobChain = null; //Chain of promises for BTserver (to avoid sending request when server is busy)
 
 function isBtSupported() {
     return (navigator.bluetooth) ? true : false;
@@ -84,10 +85,8 @@ function setConnectButtonState(newState = false) {
 
 async function connect() {
     let options = {
-        /*filters : [
-            { services : [serviceId]}
-        ]*/
-        acceptAllDevices : true,
+        filters : [{ name: [deviceName] }], //Change to acceptAllDevices for all BT devices
+        //acceptAllDevices : true,
         optionalServices : [serviceId]
     };
 
@@ -106,13 +105,13 @@ async function connect() {
 
                         connectedBtns();
 
-                        setStatus("Connected!");
+                        setStatus('Connected!');
                     });
                 });
             });
         },
         (error) => {
-            setStatus(`Cannot connect!`);
+            setStatus('Cannot connect!');
             console.log(error);
         }
     );
@@ -123,7 +122,7 @@ function disconnect() {
     if(BTserver != null) {
         BTserver.disconnect();
 
-        setStatus("Disconnected");
+        setStatus('Disconnected');
         disconnectedBtns();
 
         jobChain = null;
@@ -143,15 +142,15 @@ async function startup() {
 function addWriteJob(...bufferToBeSended) {
     if(jobChain == null) {
         jobChain = new Promise((resolve) => {
-            resolve("Start");
+            resolve('Start');
         });
     }
     
     jobChain = jobChain.then(
-        () => targetBTchar.writeValueWithoutResponse(Uint8Array.of(...bufferToBeSended)).catch((error) => {
+        () => letterBTchar.writeValueWithoutResponse(Uint8Array.of(...bufferToBeSended)).catch((error) => {
             console.log(error);
 
-            setStatus("Disconnected");
+            setStatus('Disconnected');
             disconnectedBtns();
 
             jobChain = null;
@@ -181,9 +180,9 @@ function readVolume() {
 }
 
 
-document.addEventListener("keydown", (event) => {
+document.addEventListener('keydown', (event) => {
     if(letterBTchar != null && BTserver != null) {
-        console.log("Adding to the queue: " + event.key);
+        console.log('Adding to the queue: ' + event.key);
 
         let charToBeSended = event.key.charCodeAt(0);
 
