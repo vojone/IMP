@@ -1,0 +1,29 @@
+{
+    "terminal.integrated.defaultProfile.windows": "Command Prompt",
+    "terminal.integrated.profiles.windows": {
+        "PowerShell": {
+            "source": "PowerShell",
+            "icon": "terminal-powershell"
+        },
+        "Command Prompt": {
+            "path": [
+                "${env:windir}\\Sysnative\\cmd.exe",
+                "${env:windir}\\System32\\cmd.exe"
+            ],
+            "args": ["/k", "C:/Espressif/idf_cmd_init.bat esp-idf-c8bdf424fe4b72f653036f77e6708bc4"],
+            "icon": "terminal-cmd"
+        },
+        "Git Bash": {
+            "source": "Git Bash"
+        }
+    },
+    "files.associations": {
+        "*.php": "php",
+        "freertos.h": "c",
+        "esp_gattc_api.h": "c",
+        "task.h": "c",
+        "esp_bt_main.h": "c",
+        "esp_gatt_common_api.h": "c",
+        "esp_gap_ble_api.h": "c"
+    }
+}
