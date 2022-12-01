@@ -13,6 +13,8 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "driver/gpio.h"
+#include "driver/ledc.h"
 
 #include "esp_bt.h"
 #include "esp_bt_main.h"
@@ -26,6 +28,9 @@ QueueHandle_t queue;
 
 
 #define MODULE_TAG "MORSE_CODE"
+
+#define MAXIMUM_MESSAGE_LEN 1
+#define MAXIMUM_MESSAGE_NUM 1024
 
 
 /**
@@ -44,7 +49,13 @@ void print_bluetooth_addr() {
 
 enum profiles {
     MORSE_CODE_RECEIVER_ID,
-    PROFILE_NUM   
+    PROFILE_NUM,   
+};
+
+enum morse_code_rec_chars {
+    LETTER_CHAR,
+    VOLUME_CHAR,  
+    MORSE_CODE_REC_CHAR_NUM,
 };
 
 #define GATTS_SERVICE_UUID_MORSE_CODE_RECEIVER 0xabcd
@@ -151,6 +162,9 @@ static esp_ble_adv_params_t adv_params = {
 void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 
 
+static uint16_t morse_code_char_handle_tab[MORSE_CODE_REC_CHAR_NUM];
+
+
 struct gatts_profile_inst {
     esp_gatts_cb_t gatts_cb;
     uint16_t gatts_if;
@@ -159,6 +173,7 @@ struct gatts_profile_inst {
     uint16_t service_handle;
     esp_gatt_srvc_id_t service_id;
     uint16_t char_handle;
+    uint16_t *char_handle_tab;
     esp_bt_uuid_t char_uuid;
     esp_gatt_perm_t perm;
     esp_gatt_char_prop_t property;
@@ -167,11 +182,11 @@ struct gatts_profile_inst {
 };
 
 
-
 static struct gatts_profile_inst profile_tab[PROFILE_NUM] = { //< Table with all provided profiles of this GATT server
     [MORSE_CODE_RECEIVER_ID] = {
         .gatts_cb = gatts_profile_morse_code_event_handler,
-        .gatts_if = ESP_GATT_IF_NONE
+        .gatts_if = ESP_GATT_IF_NONE,
+        .char_handle_tab = morse_code_char_handle_tab,
     },
 };
 
@@ -181,11 +196,33 @@ static uint8_t adv_config_done = 0;
 #define SCAN_RESPONSE_CONFIG_FLAG 2 //< Flag signalizing, that adv scan response is not done yet
 
 
+void write_event_handler(esp_ble_gatts_cb_param_t *params) {
+    char buffer[MAXIMUM_MESSAGE_LEN + 1];
+
+    if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR]) {
+        ESP_LOGI(MODULE_TAG, "Writing to volume characteristic");
+
+    }
+    else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[LETTER_CHAR]) {
+        ESP_LOGI(MODULE_TAG, "Writing to letter characteristic");
+
+        size_t message_len = MAXIMUM_MESSAGE_LEN >= params->write.len ? MAXIMUM_MESSAGE_LEN : params->write.len;
+        memcpy(buffer, params->write.value, message_len);
+        memset(&(buffer[message_len]), '\0', 1);
+        // printf("%d\n", params->write.len);
+        // printf("%c %c\n", buffer[0], buffer[1]);
+        if(xQueueSend(queue, buffer, (TickType_t)0) != pdPASS) {
+            ESP_LOGE(MODULE_TAG, "Writing letter to the queue failed!");
+        }
+    }
+    else {
+        ESP_LOGE(MODULE_TAG, "Unrecognized handle!, handle=%d", params->write.handle);
+    }
+}
+
 
 void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *params) {
     esp_err_t err;
-
-    char buffer[1];
 
     switch (evt)
     {
@@ -271,8 +308,6 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
             params->add_char.service_handle
         ); 
 
-        profile_tab[MORSE_CODE_RECEIVER_ID].char_handle = params->add_char.service_handle;
-
         //Read the initial value
         uint16_t length = 0;
         const uint8_t *char_byte;
@@ -292,9 +327,11 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         //Choose the right descriptor uuid
         if(params->add_char.char_uuid.uuid.uuid16 == GATTS_CHAR_UUID_MORSE_CODE_RECEIVER_LETTER) {
             profile_tab[MORSE_CODE_RECEIVER_ID].descr_uuid.uuid.uuid16 = GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_LETTER;
+            profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[LETTER_CHAR] = params->add_char.attr_handle;
         }
         else {
             profile_tab[MORSE_CODE_RECEIVER_ID].descr_uuid.uuid.uuid16 = GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_VOL;
+            profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR] = params->add_char.attr_handle;
         }
 
         err = esp_ble_gatts_add_char_descr( //< Adding the characteristic descriptor event
@@ -365,8 +402,50 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
 
     case ESP_GATTS_WRITE_EVT:
         ESP_LOGI(MODULE_TAG, "WRITE_EVT, status=%d", params->rsp.status);
-        buffer[0] = params->write.value[0];
-        xQueueSend(queue, (void*)buffer, (TickType_t)0); 
+        ESP_LOGI(MODULE_TAG, "WRITE_EVT, handle=%d, conn_id=%d, trans_id=%d", params->write.handle, params->write.conn_id, params->write.trans_id);
+        esp_log_buffer_hex(MODULE_TAG, params->write.value, params->write.len);
+
+        if(!params->write.is_prep) {
+            if(profile_tab[MORSE_CODE_RECEIVER_ID].descr_handle == params->write.handle && params->write.len == 2) {
+                uint16_t descr_val = params->write.value[1] << 8 | params->write.value[0];
+                if(descr_val == 0x0001) {
+                    ESP_LOGI(MODULE_TAG, "Sending notification");
+                    if(morse_code_vol_properties & ESP_GATT_CHAR_PROP_BIT_NOTIFY) {
+                        //Only needed if it support notify
+                    } 
+                }
+                else if(descr_val == 0x0002) {
+                    ESP_LOGI(MODULE_TAG, "Sending indication");
+                    if(morse_code_vol_properties & ESP_GATT_CHAR_PROP_BIT_INDICATE) {
+                        //Only needed if it support indication
+                    } 
+                }
+                else if(descr_val == 0x0000) {
+                    ESP_LOGI(MODULE_TAG, "Sending notification and indication is disabled");
+                }
+                else {
+                    ESP_LOGI(MODULE_TAG, "Unexpected value!");
+                }
+            }
+        }
+        if(params->write.need_rsp) { //Response is needed
+            if(params->write.is_prep) {
+                ESP_LOGI(MODULE_TAG, "Long write");
+                //Only needed if long write is supported
+            }
+            else {
+                ESP_LOGI(MODULE_TAG, "Short write");
+                esp_ble_gatts_send_response(gatts_if, params->write.conn_id, params->write.trans_id, ESP_GATT_OK, NULL);
+            }   
+        }
+        else {
+            write_event_handler(params);
+        }
+
+        break;
+
+    case ESP_GATTS_EXEC_WRITE_EVT:
+        ESP_LOGI(MODULE_TAG, "EXEC_WRITE_EVT, flag=%d", params->exec_write.exec_write_flag);
         break;
 
     case ESP_GATTS_RESPONSE_EVT:
@@ -529,13 +608,42 @@ esp_err_t bluetooth_init() {
 //End of the part based on https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/bluedroid/ble/gatt_server/tutorial/Gatt_Server_Example_Walkthrough.md
 
 
+/**
+ * @brief 
+ * 
+ * @param new_duty 
+ */
+void update_volume(uint8_t new_duty) {
+    
+}
+
+
+/**
+ * @brief 
+ * 
+ * @param arg 
+ */
 void morse_beep(void *arg) {
-    char buffer[1];
+    esp_err_t err;
+    char buffer[MAXIMUM_MESSAGE_LEN + 1];
+
     while(1) {
-        if(xQueueReceive(queue, &(buffer), (TickType_t)5)) {
-            printf("MORSE_BEEP %s\n", buffer);
+        if(xQueueReceive(queue, buffer, (TickType_t)5)) {
+            printf("Read %s\n", buffer);
+
+            err = ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+            ESP_ERROR_CHECK(err);
+
+            err = ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+            ESP_ERROR_CHECK(err);
+
             vTaskDelay(1000/portTICK_RATE_MS);
+
+            err = ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+            ESP_ERROR_CHECK(err);
         }
+
+        vTaskDelay(1000/portTICK_RATE_MS);
     }
 }
 
@@ -543,9 +651,41 @@ void morse_beep(void *arg) {
 TaskHandle_t morse_beep_handle = NULL;;
 
 void app_main(void) {
-    queue = xQueueCreate(10, 1);
+    esp_err_t err;
 
-    esp_err_t err = nvs_flash_init();
+    queue = xQueueCreate(MAXIMUM_MESSAGE_NUM, MAXIMUM_MESSAGE_LEN + 1);
+    if(!queue) {
+        ESP_LOGE(MODULE_TAG, "Unable to create queue!");
+    }
+
+    ledc_timer_config_t ledc_timer = {
+        .duty_resolution = LEDC_TIMER_13_BIT,
+        .freq_hz = 5000,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .timer_num = LEDC_TIMER_0,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+
+    err = ledc_timer_config(&ledc_timer);
+    ESP_ERROR_CHECK(err);
+
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_0,
+        .intr_type = LEDC_INTR_DISABLE,
+        .gpio_num = GPIO_NUM_5,
+        .duty = 4095,
+        .hpoint = 0,
+    };
+
+    err = ledc_channel_config(&ledc_channel);
+    ESP_ERROR_CHECK(err);
+
+    err = ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    ESP_ERROR_CHECK(err);
+
+    err = nvs_flash_init();
     if(err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) { //< Potentially recoverable errors
         ESP_ERROR_CHECK(nvs_flash_erase()); //< Try to erase NVS and then init it again
         err = nvs_flash_init();
@@ -554,5 +694,5 @@ void app_main(void) {
 
     bluetooth_init();
 
-    xTaskCreatePinnedToCore(morse_beep, "Demo_Task2", 4096, NULL, 10, &morse_beep_handle, 1);
+    xTaskCreatePinnedToCore(morse_beep, "morse_beep", 4096, NULL, 10, &morse_beep_handle, 1);
 }

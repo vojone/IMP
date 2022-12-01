@@ -139,7 +139,7 @@ async function startup() {
 }
 
 
-function addWriteJob(...bufferToBeSended) {
+function addWriteJob(char, bufferToBeSended) {
     if(jobChain == null) {
         jobChain = new Promise((resolve) => {
             resolve('Start');
@@ -147,7 +147,7 @@ function addWriteJob(...bufferToBeSended) {
     }
     
     jobChain = jobChain.then(
-        () => letterBTchar.writeValueWithoutResponse(Uint8Array.of(...bufferToBeSended)).catch((error) => {
+        () => char.writeValueWithoutResponse(Uint8Array.of(...bufferToBeSended)).catch((error) => {
             console.log(error);
 
             setStatus('Disconnected');
@@ -186,7 +186,16 @@ document.addEventListener('keydown', (event) => {
 
         let charToBeSended = event.key.charCodeAt(0);
 
-        addWriteJob(charToBeSended);
+        console.log(charToBeSended);
+        console.log(charToBeSended > 30);
+        console.log(charToBeSended < 39);
+        if(charToBeSended >= 48 && charToBeSended <= 57) {
+            console.log(volumeBTchar);
+            addWriteJob(volumeBTchar, [charToBeSended]);
+        }
+        else {
+            addWriteJob(letterBTchar, [charToBeSended]);
+        }
     }
     else {
         disconnectedBtns();
