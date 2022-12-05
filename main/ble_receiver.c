@@ -1,4 +1,13 @@
+/**
+ * @file ble_receiver.c
+ * @author Vojtěch Dvořák (xdvora3o)
+ * @date 2022-12-05
+ */
+
 #include "ble_receiver.h"
+
+static void (*write_event_handler)(esp_ble_gatts_cb_param_t *) = NULL;
+
 
 //Based on https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/bluedroid/ble/gatt_server/tutorial/Gatt_Server_Example_Walkthrough.md
 
@@ -103,13 +112,11 @@ static esp_ble_adv_params_t adv_params = {
 };
 
 
-static void (*write_event_handler)(esp_ble_gatts_cb_param_t *) = NULL;
 
-
-
-static uint8_t adv_config_done = 0;
+static uint8_t adv_config_done = 0; //<
 #define ADV_CONFIG_FLAG 1 //< Flag signalizing, that advertising configuration is not done
 #define SCAN_RESPONSE_CONFIG_FLAG 2 //< Flag signalizing, that adv scan response is not done yet
+
 
 
 /**
@@ -124,6 +131,13 @@ void print_bluetooth_addr() {
 
 
 
+/**
+ * @brief 
+ * 
+ * @param evt 
+ * @param gatts_if 
+ * @param params 
+ */
 void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *params) {
     esp_err_t err;
 

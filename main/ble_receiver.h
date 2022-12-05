@@ -1,3 +1,9 @@
+/**
+ * @file ble_receiver.h
+ * @author Vojtěch Dvořák (xdvora3o)
+ * @date 2022-12-05
+ */
+
 #ifndef __BLE_RECEIVER__
 #define __BLE_RECEIVER__
 

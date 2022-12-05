@@ -17,22 +17,34 @@
 
 #include "ble_receiver.h"
 
+#define LEDC_TIMER_RESOLUTION LEDC_TIMER_13_BIT
+#define LEDC_SPEED_MODE LEDC_LOW_SPEED_MODE
+#define BUZZER_CHANNEL LEDC_CHANNEL_0
+#define BUZZER_LEDC_TIMER LEDC_TIMER_0
+#define LEDC_TIMER_FREQ 5000
+
+#define BUZZER_GPIO GPIO_NUM_5
+
 
 QueueHandle_t queue;
 
 
-#define MODULE_TAG "MORSE_CODE"
+#define APP_NAME "MORSE_CODE"
 
 #define MAXIMUM_MESSAGE_LEN 1
 #define MAXIMUM_MESSAGE_NUM 1024
 
 void update_volume(uint8_t new_volume) {
+    uint16_t vol_handle = profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR];
+    esp_err_t err = esp_ble_gatts_set_attr_value(vol_handle, 1, new_volume);
+    ESP_ERROR_CHECK(err);
+
     float perc = (float)new_volume/255.0;
 
-    unsigned new_duty = (unsigned)((1 << LEDC_TIMER_13_BIT)*perc);
+    unsigned new_duty = (unsigned)((1 << LEDC_TIMER_RESOLUTION)*perc);
 
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, new_duty);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    ledc_set_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL, new_duty);
+    ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
 }
 
 void write_event_handler(esp_ble_gatts_cb_param_t *params) {
@@ -41,9 +53,6 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
 
     if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR]) {
         ESP_LOGI(MODULE_TAG, "Writing to volume characteristic");
-
-        err = esp_ble_gatts_set_attr_value(params->write.handle, 1, &(params->write.value[0]));
-        ESP_ERROR_CHECK(err);
 
         update_volume(params->write.value[0]);
     }
@@ -78,22 +87,70 @@ void morse_beep(void *arg) {
 
     while(1) {
         if(xQueueReceive(queue, buffer, (TickType_t)5)) { //5 ticks block if letter is not currently available
-            printf("Read %s Duty %d\n", buffer, ledc_get_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
+            printf("Read %s Duty %d\n", buffer, ledc_get_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL));
     
-            err = ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+            err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
             ESP_ERROR_CHECK(err);
 
-            err = ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+            err = ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
             ESP_ERROR_CHECK(err);
 
             vTaskDelay(1000/portTICK_RATE_MS);
 
-            err = ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+            err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
             ESP_ERROR_CHECK(err);
         }
 
         vTaskDelay(1000/portTICK_RATE_MS);
     }
+}
+
+
+/**
+ * @brief 
+ * 
+ * @return esp_err_t 
+ */
+esp_err_t ledc_init() {
+    esp_err_t err;
+
+    ledc_timer_config_t ledc_timer = {
+        .duty_resolution = LEDC_TIMER_RESOLUTION,
+        .freq_hz = LEDC_TIMER_FREQ,
+        .speed_mode = LEDC_SPEED_MODE,
+        .timer_num = BUZZER_LEDC_TIMER,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+
+    err = ledc_timer_config(&ledc_timer);
+    if(err != ESP_OK) {
+        ESP_LOGE(APP_NAME, "ledc_stop failed!");
+        return err;
+    }
+
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode = LEDC_SPEED_MODE,
+        .channel = BUZZER_CHANNEL,
+        .timer_sel = BUZZER_LEDC_TIMER,
+        .intr_type = LEDC_INTR_DISABLE,
+        .gpio_num = BUZZER_GPIO,
+        .duty = 0,
+        .hpoint = 0,
+    };
+
+    err = ledc_channel_config(&ledc_channel);
+    if(err != ESP_OK) {
+        ESP_LOGE(APP_NAME, "ledc_channel_config failed!");
+        return err;
+    }
+
+    err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
+    if(err) {
+        ESP_LOGE(APP_NAME, "ledc_stop failed!");
+        return err;
+    }
+
+    return ESP_OK;
 }
 
 
@@ -107,33 +164,6 @@ void app_main(void) {
         ESP_LOGE(MODULE_TAG, "Unable to create queue!");
     }
 
-    ledc_timer_config_t ledc_timer = {
-        .duty_resolution = LEDC_TIMER_13_BIT,
-        .freq_hz = 5000,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .timer_num = LEDC_TIMER_0,
-        .clk_cfg = LEDC_AUTO_CLK,
-    };
-
-    err = ledc_timer_config(&ledc_timer);
-    ESP_ERROR_CHECK(err);
-
-    ledc_channel_config_t ledc_channel = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = LEDC_CHANNEL_0,
-        .timer_sel = LEDC_TIMER_0,
-        .intr_type = LEDC_INTR_DISABLE,
-        .gpio_num = GPIO_NUM_5,
-        .duty = 4095,
-        .hpoint = 0,
-    };
-
-    err = ledc_channel_config(&ledc_channel);
-    ESP_ERROR_CHECK(err);
-
-    err = ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-    ESP_ERROR_CHECK(err);
-
     err = nvs_flash_init();
     if(err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) { //< Potentially recoverable errors
         ESP_ERROR_CHECK(nvs_flash_erase()); //< Try to erase NVS and then init it again
@@ -141,7 +171,11 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(err);
 
-    bluetooth_init(write_event_handler);
+    err = ledc_init();
+    ESP_ERROR_CHECK(err);
+
+    err = bluetooth_init(write_event_handler);
+    ESP_ERROR_CHECK(err);
 
     xTaskCreatePinnedToCore(morse_beep, "morse_beep", 4096, NULL, 10, &morse_beep_handle, 1);
 }
