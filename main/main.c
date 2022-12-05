@@ -43,6 +43,15 @@ void print_bluetooth_addr() {
     ESP_LOGI(MODULE_TAG, "Bluetooth addr: " ESP_BD_ADDR_STR, ESP_BD_ADDR_HEX(addr));
 }
 
+void update_volume(uint8_t new_volume) {
+    float perc = (float)new_volume/255.0;
+
+    unsigned new_duty = (unsigned)((1 << LEDC_TIMER_13_BIT)*perc);
+
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, new_duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
 
 //Based on https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/bluedroid/ble/gatt_server/tutorial/Gatt_Server_Example_Walkthrough.md
 #define DEVICE_NAME "Morse code - receiver"
@@ -76,6 +85,12 @@ static esp_gatt_perm_t morse_code_letter_permissions = ESP_GATT_PERM_WRITE; //< 
 static esp_gatt_char_prop_t morse_code_vol_properties = ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_READ; //< Just hint for client what actions he is able to do with characteristic
 static esp_gatt_perm_t morse_code_vol_permissions = ESP_GATT_PERM_WRITE | ESP_GATT_PERM_READ; //< The GATT server will reject read event of morse code message characteristic
 
+//Following attribute value is not used - there is queue instead
+
+/**
+ * @brief Value of letter to be beeped
+ * 
+ */
 uint8_t morse_code_letter_val[] = { 0x00 };
 
 /**
@@ -87,6 +102,9 @@ esp_attr_value_t morse_code_letter_char_val = {
     .attr_len = 1,
     .attr_value = morse_code_letter_val
 };
+
+
+
 
 uint8_t morse_code_volume_val[] = { 0x00 };
 
@@ -198,21 +216,29 @@ static uint8_t adv_config_done = 0;
 
 void write_event_handler(esp_ble_gatts_cb_param_t *params) {
     char buffer[MAXIMUM_MESSAGE_LEN + 1];
+    esp_err_t err;
 
     if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR]) {
         ESP_LOGI(MODULE_TAG, "Writing to volume characteristic");
 
+        err = esp_ble_gatts_set_attr_value(params->write.handle, 1, &(params->write.value[0]));
+        ESP_ERROR_CHECK(err);
+
+        update_volume(params->write.value[0]);
     }
     else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[LETTER_CHAR]) {
         ESP_LOGI(MODULE_TAG, "Writing to letter characteristic");
 
         size_t message_len = MAXIMUM_MESSAGE_LEN >= params->write.len ? MAXIMUM_MESSAGE_LEN : params->write.len;
-        memcpy(buffer, params->write.value, message_len);
-        memset(&(buffer[message_len]), '\0', 1);
-        // printf("%d\n", params->write.len);
-        // printf("%c %c\n", buffer[0], buffer[1]);
-        if(xQueueSend(queue, buffer, (TickType_t)0) != pdPASS) {
-            ESP_LOGE(MODULE_TAG, "Writing letter to the queue failed!");
+
+        for(int i = 0; i < params->write.len && i < MAXIMUM_MESSAGE_NUM; i++) {
+            memcpy(buffer, params->write.value, message_len);
+            memset(&(buffer[message_len]), '\0', 1);
+            // printf("%d\n", params->write.len);
+            // printf("%c %c\n", buffer[0], buffer[1]);
+            if(xQueueSend(queue, buffer, (TickType_t)0) != pdPASS) {
+                ESP_LOGE(MODULE_TAG, "Writing letter to the queue failed!");
+            }
         }
     }
     else {
@@ -444,6 +470,10 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
 
         break;
 
+    case ESP_GATTS_SET_ATTR_VAL_EVT:
+        ESP_LOGI(MODULE_TAG, "SET_ATTR_VAL_EVT, handle=%d", params->set_attr_val.attr_handle);
+        break;
+
     case ESP_GATTS_EXEC_WRITE_EVT:
         ESP_LOGI(MODULE_TAG, "EXEC_WRITE_EVT, flag=%d", params->exec_write.exec_write_flag);
         break;
@@ -608,15 +638,6 @@ esp_err_t bluetooth_init() {
 //End of the part based on https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/bluedroid/ble/gatt_server/tutorial/Gatt_Server_Example_Walkthrough.md
 
 
-/**
- * @brief 
- * 
- * @param new_duty 
- */
-void update_volume(uint8_t new_duty) {
-    
-}
-
 
 /**
  * @brief 
@@ -628,9 +649,9 @@ void morse_beep(void *arg) {
     char buffer[MAXIMUM_MESSAGE_LEN + 1];
 
     while(1) {
-        if(xQueueReceive(queue, buffer, (TickType_t)5)) {
-            printf("Read %s\n", buffer);
-
+        if(xQueueReceive(queue, buffer, (TickType_t)5)) { //5 ticks block if letter is not currently available
+            printf("Read %s Duty %d\n", buffer, ledc_get_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
+    
             err = ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
             ESP_ERROR_CHECK(err);
 
@@ -648,7 +669,7 @@ void morse_beep(void *arg) {
 }
 
 
-TaskHandle_t morse_beep_handle = NULL;;
+TaskHandle_t morse_beep_handle = NULL;
 
 void app_main(void) {
     esp_err_t err;

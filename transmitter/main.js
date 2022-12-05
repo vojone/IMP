@@ -187,8 +187,6 @@ document.addEventListener('keydown', (event) => {
         let charToBeSended = event.key.charCodeAt(0);
 
         console.log(charToBeSended);
-        console.log(charToBeSended > 30);
-        console.log(charToBeSended < 39);
         if(charToBeSended >= 48 && charToBeSended <= 57) {
             console.log(volumeBTchar);
             addWriteJob(volumeBTchar, [charToBeSended]);
