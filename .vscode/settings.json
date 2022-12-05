@@ -25,6 +25,7 @@
         "esp_bt_main.h": "c",
         "esp_gatt_common_api.h": "c",
         "esp_gap_ble_api.h": "c",
-        "*.inc": "c"
+        "*.inc": "c",
+        "gpio.h": "c"
     }
 }

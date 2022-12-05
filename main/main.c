@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "driver/timer.h"
 
 #include "ble_receiver.h"
 
@@ -26,7 +27,7 @@
 #define BUZZER_GPIO GPIO_NUM_5
 
 
-QueueHandle_t queue;
+QueueHandle_t queue, out_queue;
 
 
 #define APP_NAME "MORSE_CODE"
@@ -34,9 +35,15 @@ QueueHandle_t queue;
 #define MAXIMUM_MESSAGE_LEN 1
 #define MAXIMUM_MESSAGE_NUM 1024
 
+#define MAXIMUM_OUT_CONTROL_NUM 4096
+
+#define TIMER_DIVIDER (16)
+#define TIMER_SCALE (TIMER_BASE_CLK / TIMER_DIVIDER)
+
+
 void update_volume(uint8_t new_volume) {
     uint16_t vol_handle = profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR];
-    esp_err_t err = esp_ble_gatts_set_attr_value(vol_handle, 1, new_volume);
+    esp_err_t err = esp_ble_gatts_set_attr_value(vol_handle, 1, &new_volume);
     ESP_ERROR_CHECK(err);
 
     float perc = (float)new_volume/255.0;
@@ -49,7 +56,6 @@ void update_volume(uint8_t new_volume) {
 
 void write_event_handler(esp_ble_gatts_cb_param_t *params) {
     char buffer[MAXIMUM_MESSAGE_LEN + 1];
-    esp_err_t err;
 
     if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR]) {
         ESP_LOGI(MODULE_TAG, "Writing to volume characteristic");
@@ -76,29 +82,60 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
     }
 }
 
+typedef struct out_control {
+    uint8_t buzz_state;
+    uint8_t led_state;
+} out_control_t;
+
+
+static bool IRAM_ATTR out_control_routine(void *args) {
+    esp_err_t err;
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    out_control_t out_control;
+    bool will_be_returned = false;
+
+    ets_printf("Called out control_routine\n");
+
+    if(xQueueReceiveFromISR(out_queue, &out_control, &higher_priority_task_woken)) { //5 ticks block if letter is not currently available
+        if(out_control.buzz_state > 0) {
+            out_control.buzz_state--;
+
+            will_be_returned = true;
+
+            err = ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
+            ESP_ERROR_CHECK(err);
+        }
+        else {
+            err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
+            ESP_ERROR_CHECK(err);
+        }
+
+        if(out_control.led_state > 0) {
+            out_control.led_state--;
+
+            will_be_returned = true;
+        }
+        else {
+
+        }
+    }
+
+    return higher_priority_task_woken == pdTRUE;
+}
+
+
 /**
  * @brief 
  * 
  * @param arg 
  */
-void morse_beep(void *arg) {
+void transate(void *arg) {
     esp_err_t err;
     char buffer[MAXIMUM_MESSAGE_LEN + 1];
 
     while(1) {
         if(xQueueReceive(queue, buffer, (TickType_t)5)) { //5 ticks block if letter is not currently available
             printf("Read %s Duty %d\n", buffer, ledc_get_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL));
-    
-            err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
-            ESP_ERROR_CHECK(err);
-
-            err = ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
-            ESP_ERROR_CHECK(err);
-
-            vTaskDelay(1000/portTICK_RATE_MS);
-
-            err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
-            ESP_ERROR_CHECK(err);
         }
 
         vTaskDelay(1000/portTICK_RATE_MS);
@@ -154,14 +191,70 @@ esp_err_t ledc_init() {
 }
 
 
-TaskHandle_t morse_beep_handle = NULL;
+esp_err_t out_control_timer_init() {
+    esp_err_t err;
+
+    timer_config_t config = {
+        .divider = TIMER_DIVIDER,
+        .counter_dir = TIMER_COUNT_UP,
+        .counter_en = TIMER_PAUSE,
+        .alarm_en = TIMER_ALARM_EN,
+        .auto_reload = true,
+    };
+
+    err = timer_init(TIMER_GROUP_0, TIMER_0, &config);
+    if(err != ESP_OK) {
+        ESP_LOGE(APP_NAME, "timer_init failed!");
+        return err;
+    }
+
+    err = timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0);
+    if(err != ESP_OK) {
+        ESP_LOGE(APP_NAME, "timer_set_counter_value failed!");
+        return err;
+    }
+
+    err = timer_set_alarm_value(TIMER_GROUP_0, TIMER_0, 3 * TIMER_SCALE); //Time in secs * scale
+    if(err != ESP_OK) {
+        ESP_LOGE(APP_NAME, "timer_set_alarm_value failed!");
+        return err;
+    }
+
+    err = timer_enable_intr(TIMER_GROUP_0, TIMER_0);
+    if(err != ESP_OK) {
+        ESP_LOGE(APP_NAME, "timer_enable_intr failed!");
+        return err;
+    }
+
+    err = timer_isr_callback_add(TIMER_GROUP_0, TIMER_0, out_control_routine, NULL,  0);
+    if(err != ESP_OK) {
+        ESP_LOGE(APP_NAME, "timer_isr_callback_add failed!");
+        return err;
+    }
+
+    err = timer_start(TIMER_GROUP_0, TIMER_0);
+    if(err != ESP_OK) {
+        ESP_LOGE(APP_NAME, "timer_start failed!");
+        return err;
+    }
+
+    return ESP_OK;
+}
+
+
+TaskHandle_t translator_handle = NULL;
 
 void app_main(void) {
     esp_err_t err;
 
     queue = xQueueCreate(MAXIMUM_MESSAGE_NUM, MAXIMUM_MESSAGE_LEN + 1);
     if(!queue) {
-        ESP_LOGE(MODULE_TAG, "Unable to create queue!");
+        ESP_LOGE(MODULE_TAG, "Unable to create queue for letters!");
+    }
+
+    out_queue = xQueueCreate(MAXIMUM_OUT_CONTROL_NUM, sizeof(out_control_t));
+    if(!out_queue) {
+        ESP_LOGE(MODULE_TAG, "Unable to create queue for out control!");
     }
 
     err = nvs_flash_init();
@@ -177,5 +270,8 @@ void app_main(void) {
     err = bluetooth_init(write_event_handler);
     ESP_ERROR_CHECK(err);
 
-    xTaskCreatePinnedToCore(morse_beep, "morse_beep", 4096, NULL, 10, &morse_beep_handle, 1);
+    err = out_control_timer_init();
+    ESP_ERROR_CHECK(err);
+
+    xTaskCreatePinnedToCore(transate, "translator", 4096, NULL, 10, &translator_handle, 1);
 }
