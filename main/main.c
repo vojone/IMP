@@ -25,6 +25,7 @@
 #define LEDC_TIMER_FREQ 5000
 
 #define BUZZER_GPIO GPIO_NUM_5
+#define LED_GPIO GPIO_NUM_6
 
 
 QueueHandle_t queue, out_queue;
@@ -124,12 +125,51 @@ static bool IRAM_ATTR out_control_routine(void *args) {
 }
 
 
+typedef struct translation {
+    char ch; //< Character
+    char *mc; //< Morse code representation
+} translation_t;
+
+
+const char *char_lookup(char tb_tr) {
+    static translation_t tr_tab[] = {
+        { .ch = 0, .mc = NULL}, 
+        { .ch = ' ', .mc = "//"},       { .ch = '.', .mc = "/"},        { .ch = '1', .mc = ".----"}, 
+        { .ch = '2', .mc = "..---"},    { .ch = '3', .mc = "...--"},    { .ch = '4', .mc = "....-"}, 
+        { .ch = '5', .mc = "....."},    { .ch = '6', .mc = "-...."},    { .ch = '7', .mc = "--..."}, 
+        { .ch = '8', .mc = "---.."},    { .ch = '9', .mc = "----."},    { .ch = '0', .mc = "-----"},  
+        { .ch = 'a', .mc = ".-"},       { .ch = 'b', .mc = "-..."},     { .ch = 'c', .mc = "-.-."}, 
+        { .ch = 'd', .mc = "-.."},      { .ch = 'e', .mc = "."},        { .ch = 'f', .mc = "..-."},   
+        { .ch = 'g', .mc = "--."},      { .ch = 'h', .mc = "...."},     { .ch = 'i', .mc = ".."},      
+        { .ch = 'j', .mc = ".---"},     { .ch = 'k', .mc = "-.-"},      { .ch = 'l', .mc = ".-.."},     
+        { .ch = 'm', .mc = "--"},       { .ch = 'n', .mc = "-."},       { .ch = 'o', .mc = "---"},      
+        { .ch = 'p', .mc = ".--."},     { .ch = 'q', .mc = "--.-"},     { .ch = 'r', .mc = ".-."},  
+        { .ch = 's', .mc = "..."},      { .ch = 't', .mc = "-"},        { .ch = 'u', .mc = "..-"},  
+        { .ch = 'v', .mc = "...-"},     { .ch = 'w', .mc = ".--"},      { .ch = 'x', .mc = "-..-"}, 
+        { .ch = 'y', .mc = "-.--"},     { .ch = 'z', .mc = "--.."},     { .ch = 0, .mc = NULL}, 
+    };
+
+    static const size_t approx_middle_i = 19;
+    static translation_t * approx_middle = &(tr_tab[approx_middle_i]);
+
+    int i = approx_middle_i;
+    for(; tr_tab[i].ch && tr_tab[i].mc && tr_tab[i].ch != tb_tr; tb_tr < approx_middle->ch ? i-- : i++);
+
+    if(tr_tab[i].ch && tr_tab[i].mc) {
+        return tr_tab[i].mc;
+    }
+    else {
+        return NULL;
+    }
+}
+
+
 /**
  * @brief 
  * 
  * @param arg 
  */
-void transate(void *arg) {
+void translate(void *arg) {
     esp_err_t err;
     char buffer[MAXIMUM_MESSAGE_LEN + 1];
 
@@ -138,7 +178,37 @@ void transate(void *arg) {
             printf("Read %s Duty %d\n", buffer, ledc_get_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL));
         }
 
-        vTaskDelay(1000/portTICK_RATE_MS);
+        for(int i = 0; i < MAXIMUM_MESSAGE_LEN; i++) {
+            char currentChar = buffer[i];
+
+            const char *morse_code = char_lookup(currentChar);
+            if(!morse_code) {
+                ESP_LOGE(APP_NAME, "Unable to find character in lookup table!");
+                continue;
+            }
+            else {
+                for(int j = 0; morse_code[j]; j++) {
+                    out_control_t out_c = { .buzz_state = 0, .led_state = 0};
+                    switch(morse_code[j]) {
+                        case '.':
+                            out_c.buzz_state = 1;
+                            break;
+                        case '-' :
+                            out_c.buzz_state = 3;
+                            break;
+                        default:
+                            out_c.led_state = 2;
+                            break;
+                    }
+
+                    if(xQueueSend(out_queue, &out_c, (TickType_t)0) != pdPASS) {
+                        ESP_LOGE(MODULE_TAG, "Writing letter to the queue failed!");
+                    }
+                }
+            }
+        }
+
+        //vTaskDelay(1000/portTICK_RATE_MS);
     }
 }
 
@@ -273,5 +343,11 @@ void app_main(void) {
     err = out_control_timer_init();
     ESP_ERROR_CHECK(err);
 
-    xTaskCreatePinnedToCore(transate, "translator", 4096, NULL, 10, &translator_handle, 1);
+    err = gpio_reset_pin(LED_GPIO);
+    ESP_ERROR_CHECK(err);
+
+    err = gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
+    ESP_ERROR_CHECK(err);
+
+    xTaskCreatePinnedToCore(translate, "translator", 4096, NULL, 10, &translator_handle, 1);
 }
