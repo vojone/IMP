@@ -20,12 +20,14 @@ function setStatus(newStatusHTML) {
 
 function disconnectedBtns() {
     document.getElementById('disconnect').disabled = true;
+    document.getElementById('volume').disabled = true;
     document.getElementById('connect').disabled = false;
 }
 
 
 function connectedBtns() {
     document.getElementById('disconnect').disabled = false;
+    document.getElementById('volume').disabled = false;
     document.getElementById('connect').disabled = true;
 }
 
@@ -104,6 +106,7 @@ async function connect() {
                         volumeBTchar = chars[1];
 
                         connectedBtns();
+                        updateVolumeSlider();
 
                         setStatus('Connected!');
                     });
@@ -179,6 +182,31 @@ function readVolume() {
     });
 }
 
+function updateVolumeSlider() {
+    if(volumeBTchar != null && BTserver != null) {
+        volumeBTchar.readValue().then(
+        (value) => {
+            document.getElementById('volume').value = value.getUint8(0);
+        },
+        (error) => {
+            console.log(error);
+        });
+    }
+    else {
+        disconnectedBtns();
+    }
+}
+
+
+function volumeChanged(event) {
+    if(volumeBTchar != null && BTserver != null) {
+        addWriteJob(volumeBTchar, [event.target.value]);
+    }
+    else {
+        disconnectedBtns();
+    }
+}
+
 
 document.addEventListener('keydown', (event) => {
     if(letterBTchar != null && BTserver != null) {
@@ -187,13 +215,8 @@ document.addEventListener('keydown', (event) => {
         let charToBeSended = event.key.charCodeAt(0);
 
         console.log(charToBeSended);
-        if(charToBeSended >= 48 && charToBeSended <= 57) {
-            console.log(volumeBTchar);
-            addWriteJob(volumeBTchar, [charToBeSended]);
-        }
-        else {
-            addWriteJob(letterBTchar, [charToBeSended]);
-        }
+
+        addWriteJob(letterBTchar, [charToBeSended]);
     }
     else {
         disconnectedBtns();

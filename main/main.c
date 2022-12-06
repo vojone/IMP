@@ -11,6 +11,7 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -25,10 +26,11 @@
 #define LEDC_TIMER_FREQ 5000
 
 #define BUZZER_GPIO GPIO_NUM_5
-#define LED_GPIO GPIO_NUM_6
+#define LED_GPIO GPIO_NUM_14
 
 
-QueueHandle_t queue, out_queue;
+QueueHandle_t queue = NULL, out_queue = NULL;
+SemaphoreHandle_t out_queue_sem = NULL;
 
 
 #define APP_NAME "MORSE_CODE"
@@ -41,6 +43,8 @@ QueueHandle_t queue, out_queue;
 #define TIMER_DIVIDER (16)
 #define TIMER_SCALE (TIMER_BASE_CLK / TIMER_DIVIDER)
 
+#define BASE_TIME_INT_MS 250
+
 
 void update_volume(uint8_t new_volume) {
     uint16_t vol_handle = profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR];
@@ -52,7 +56,6 @@ void update_volume(uint8_t new_volume) {
     unsigned new_duty = (unsigned)((1 << LEDC_TIMER_RESOLUTION)*perc);
 
     ledc_set_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL, new_duty);
-    ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
 }
 
 void write_event_handler(esp_ble_gatts_cb_param_t *params) {
@@ -95,30 +98,43 @@ static bool IRAM_ATTR out_control_routine(void *args) {
     out_control_t out_control;
     bool will_be_returned = false;
 
-    ets_printf("Called out control_routine\n");
+    if(xSemaphoreTakeFromISR(out_queue_sem, &higher_priority_task_woken) == pdTRUE) {
+        if(xQueueReceiveFromISR(out_queue, &out_control, &higher_priority_task_woken)) {
+            ets_printf("Picked BUZZ %d LED %d\n", out_control.buzz_state, out_control.led_state);
 
-    if(xQueueReceiveFromISR(out_queue, &out_control, &higher_priority_task_woken)) { //5 ticks block if letter is not currently available
-        if(out_control.buzz_state > 0) {
-            out_control.buzz_state--;
+            if(out_control.buzz_state > 0) {
+                out_control.buzz_state--;
 
-            will_be_returned = true;
+                will_be_returned = true;
 
-            err = ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
-            ESP_ERROR_CHECK(err);
+                err = ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
+                ESP_ERROR_CHECK(err);
+            }
+            else {
+                err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
+                ESP_ERROR_CHECK(err);
+            }
+
+            if(out_control.led_state > 0) {
+                out_control.led_state--;
+
+                will_be_returned = true;
+
+                ets_printf("turning led on");
+                err = gpio_set_level(LED_GPIO, 1);
+                ESP_ERROR_CHECK(err);
+            }
+            else {
+                err = gpio_set_level(LED_GPIO, 0);
+                ESP_ERROR_CHECK(err);
+            }
+
+            if(will_be_returned == true) {
+                xQueueSendToFrontFromISR(out_queue, &out_control, &higher_priority_task_woken);
+            }   
         }
-        else {
-            err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
-            ESP_ERROR_CHECK(err);
-        }
 
-        if(out_control.led_state > 0) {
-            out_control.led_state--;
-
-            will_be_returned = true;
-        }
-        else {
-
-        }
+        xSemaphoreGiveFromISR(out_queue_sem, &higher_priority_task_woken);
     }
 
     return higher_priority_task_woken == pdTRUE;
@@ -134,7 +150,7 @@ typedef struct translation {
 const char *char_lookup(char tb_tr) {
     static translation_t tr_tab[] = {
         { .ch = 0, .mc = NULL}, 
-        { .ch = ' ', .mc = "//"},       { .ch = '.', .mc = "/"},        { .ch = '1', .mc = ".----"}, 
+        { .ch = ' ', .mc = "/"},       { .ch = '.', .mc = "//"},        { .ch = '1', .mc = ".----"}, 
         { .ch = '2', .mc = "..---"},    { .ch = '3', .mc = "...--"},    { .ch = '4', .mc = "....-"}, 
         { .ch = '5', .mc = "....."},    { .ch = '6', .mc = "-...."},    { .ch = '7', .mc = "--..."}, 
         { .ch = '8', .mc = "---.."},    { .ch = '9', .mc = "----."},    { .ch = '0', .mc = "-----"},  
@@ -175,40 +191,48 @@ void translate(void *arg) {
 
     while(1) {
         if(xQueueReceive(queue, buffer, (TickType_t)5)) { //5 ticks block if letter is not currently available
-            printf("Read %s Duty %d\n", buffer, ledc_get_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL));
-        }
+            printf("Read %s from letter queue\n", buffer);
 
-        for(int i = 0; i < MAXIMUM_MESSAGE_LEN; i++) {
-            char currentChar = buffer[i];
+            for(int i = 0; i < MAXIMUM_MESSAGE_LEN; i++) {
+                char cur_char = buffer[i];
 
-            const char *morse_code = char_lookup(currentChar);
-            if(!morse_code) {
-                ESP_LOGE(APP_NAME, "Unable to find character in lookup table!");
-                continue;
-            }
-            else {
-                for(int j = 0; morse_code[j]; j++) {
-                    out_control_t out_c = { .buzz_state = 0, .led_state = 0};
-                    switch(morse_code[j]) {
-                        case '.':
-                            out_c.buzz_state = 1;
-                            break;
-                        case '-' :
-                            out_c.buzz_state = 3;
-                            break;
-                        default:
-                            out_c.led_state = 2;
-                            break;
+                const char *morse_code = char_lookup(cur_char);
+                if(!morse_code) {
+                    ESP_LOGE(APP_NAME, "Unable to find character in lookup table!");
+                    continue;
+                }
+                else {
+                    if(xSemaphoreTake(out_queue_sem, portMAX_DELAY) == pdTRUE) {
+
+                        for(int j = 0; morse_code[j]; j++) {
+                            out_control_t out_c = { .buzz_state = 0, .led_state = 0};
+                            switch(morse_code[j]) {
+                                case '.':
+                                    out_c.buzz_state = 1;
+                                    break;
+                                case '-' :
+                                    out_c.buzz_state = 3;
+                                    break;
+                                default:
+                                    out_c.led_state = 1;
+                                    break;
+                            }
+
+                            if(xQueueSend(out_queue, &out_c, (TickType_t)5) != pdPASS) {
+                                ESP_LOGE(MODULE_TAG, "Writing letter to the queue failed!");
+                            }
+                        }
+
+                        xSemaphoreGive(out_queue_sem);
+
+                        ESP_LOGI(APP_NAME, "Translated to %s and written it to out control queue...", morse_code);
                     }
-
-                    if(xQueueSend(out_queue, &out_c, (TickType_t)0) != pdPASS) {
-                        ESP_LOGE(MODULE_TAG, "Writing letter to the queue failed!");
+                    else {
+                        ESP_LOGI(APP_NAME, "Unable to obtain out_queue_sem! Skipping %c...", cur_char);
                     }
                 }
             }
         }
-
-        //vTaskDelay(1000/portTICK_RATE_MS);
     }
 }
 
@@ -284,7 +308,7 @@ esp_err_t out_control_timer_init() {
         return err;
     }
 
-    err = timer_set_alarm_value(TIMER_GROUP_0, TIMER_0, 3 * TIMER_SCALE); //Time in secs * scale
+    err = timer_set_alarm_value(TIMER_GROUP_0, TIMER_0, (int)((BASE_TIME_INT_MS * 1e-3) * TIMER_SCALE)); //Time in secs * scale
     if(err != ESP_OK) {
         ESP_LOGE(APP_NAME, "timer_set_alarm_value failed!");
         return err;
@@ -327,6 +351,12 @@ void app_main(void) {
         ESP_LOGE(MODULE_TAG, "Unable to create queue for out control!");
     }
 
+    out_queue_sem = xSemaphoreCreateBinary();
+    if(!out_queue_sem) {
+        ESP_LOGE(MODULE_TAG, "Unable to create semaphore for out queue!");
+    }
+    xSemaphoreGive(out_queue_sem);
+
     err = nvs_flash_init();
     if(err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) { //< Potentially recoverable errors
         ESP_ERROR_CHECK(nvs_flash_erase()); //< Try to erase NVS and then init it again
@@ -343,10 +373,11 @@ void app_main(void) {
     err = out_control_timer_init();
     ESP_ERROR_CHECK(err);
 
-    err = gpio_reset_pin(LED_GPIO);
+    gpio_pad_select_gpio(LED_GPIO);
+    err = gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
     ESP_ERROR_CHECK(err);
 
-    err = gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
+    err = gpio_set_level(LED_GPIO, 0);
     ESP_ERROR_CHECK(err);
 
     xTaskCreatePinnedToCore(translate, "translator", 4096, NULL, 10, &translator_handle, 1);
