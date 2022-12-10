@@ -142,7 +142,9 @@ async function connect() {
 
 function disconnect() {
     if(BTserver != null) {
+        console.log(BTserver.connected);
         BTserver.disconnect();
+        console.log(BTserver.connected);
 
         setStatus('Disconnected!');
         setStatusClass('warning');

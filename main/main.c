@@ -34,7 +34,7 @@ QueueHandle_t queue = NULL, out_queue = NULL;
 SemaphoreHandle_t out_queue_sem = NULL;
 nvs_handle_t settings_nvs;
 #define VOLUME_NVS_KEY "volume" 
-#define SETTINGS_NVS_KEY "settings"
+#define SETTINGS_NVS_KEY "m_c_settings"
 
 
 #define APP_NAME "MORSE_CODE"
@@ -52,6 +52,14 @@ nvs_handle_t settings_nvs;
 
 void update_volume(uint8_t new_volume) {
     esp_err_t err = nvs_set_u8(settings_nvs, VOLUME_NVS_KEY, new_volume);
+    ESP_ERROR_CHECK(err);
+
+    err = nvs_commit(settings_nvs);
+    ESP_ERROR_CHECK(err);
+
+    uint8_t val;
+    err = nvs_get_u8(settings_nvs, VOLUME_NVS_KEY, &val);
+    ESP_LOGI(APP_NAME, "val %d", val);
     ESP_ERROR_CHECK(err);
 
     uint16_t vol_handle = profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR];
@@ -349,7 +357,12 @@ esp_err_t restore_volume() {
     if(err == ESP_ERR_NVS_NOT_FOUND) { //Volume was not written yet
         ESP_LOGI(APP_NAME, "Volume initialization! (to %d)", initial_volume);
         err = nvs_set_u8(settings_nvs, VOLUME_NVS_KEY, initial_volume);
-    }   stored_volume = initial_volume;
+
+        stored_volume = initial_volume;
+
+        err = nvs_commit(settings_nvs);
+        ESP_ERROR_CHECK(err);
+    }   
 
     if(err != ESP_OK) {
         ESP_LOGE(APP_NAME, "Volume restoration failed! (0x%x)", err - ESP_ERR_NVS_BASE);
@@ -392,6 +405,7 @@ void app_main(void) {
 
     err = nvs_flash_init();
     if(err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) { //< Potentially recoverable errors
+        ESP_LOGE(APP_NAME, "Erasing flash!");
         ESP_ERROR_CHECK(nvs_flash_erase()); //< Try to erase NVS and then init it again
         err = nvs_flash_init();
     }
