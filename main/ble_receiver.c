@@ -7,6 +7,7 @@
 #include "ble_receiver.h"
 
 static void (*write_event_handler)(esp_ble_gatts_cb_param_t *) = NULL;
+static void (*add_char_cb)(uint16_t) = NULL;
 
 
 //Based on https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/bluedroid/ble/gatt_server/tutorial/Gatt_Server_Example_Walkthrough.md
@@ -251,6 +252,10 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
             profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR] = params->add_char.attr_handle;
         }
 
+        if(add_char_cb != NULL) { //Calling custom add_char callback (e. g. for initialization of the char val)
+            add_char_cb(params->add_char.attr_handle);
+        }
+
         err = esp_ble_gatts_add_char_descr( //< Adding the characteristic descriptor event
             profile_tab[MORSE_CODE_RECEIVER_ID].service_handle,
             &profile_tab[MORSE_CODE_RECEIVER_ID].descr_uuid,
@@ -480,7 +485,12 @@ void register_write_event_handler(void (*write_event_handler_func)(esp_ble_gatts
 }
 
 
-esp_err_t bluetooth_init(void (*write_event_handler_func)(esp_ble_gatts_cb_param_t *)) {
+void register_add_char_cb(void (*add_char_cb_func)(uint16_t)) {
+    add_char_cb = add_char_cb_func;
+}
+
+
+esp_err_t bluetooth_init(void (*write_event_handler_func)(esp_ble_gatts_cb_param_t *), void (*add_char_cb_func)(uint16_t)) {
     esp_err_t err;
 
     esp_bt_controller_config_t bt_config = BT_CONTROLLER_INIT_CONFIG_DEFAULT(); //< Use default configuration
@@ -510,6 +520,7 @@ esp_err_t bluetooth_init(void (*write_event_handler_func)(esp_ble_gatts_cb_param
 
     //Bluetooth stack should be up now
     register_write_event_handler(write_event_handler_func);
+    register_add_char_cb(add_char_cb_func);
 
     err = esp_ble_gatts_register_callback(gatts_event_handler); //< Registering handling function for events, that come from GATT server
     if(err != ESP_OK) {

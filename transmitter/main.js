@@ -13,8 +13,13 @@ function isBtSupported() {
 }
 
 
+function setStatusClass(appearanceClass) {
+    document.getElementById('status').className = `status-bar ${appearanceClass}`;
+}
+
+
 function setStatus(newStatusHTML) {
-    document.getElementById('status').innerHTML = `Status: ${newStatusHTML}`;
+    document.getElementById('status').innerHTML = `${newStatusHTML}`;
 }
 
 
@@ -92,15 +97,26 @@ async function connect() {
         optionalServices : [serviceId]
     };
 
+    setStatus('Connecting... 0%');
+
     await navigator.bluetooth.requestDevice(options).then(
         (device) => {
             console.log(device);
+            setStatus('Connecting... 25%');
+            setStatusClass('info');
+
             device.gatt.connect().then((server) => {
                 console.log(server);
+                setStatus('Connecting... 50%');
+
                 server.getPrimaryService(0xabcd).then((service) => {
                     console.log(service);
+                    setStatus('Connecting... 75%');
+
                     service.getCharacteristics().then(chars => {
                         console.log(chars);
+                        setStatus('Connecting... 100%');
+
                         BTserver = server;
                         letterBTchar = chars[0];
                         volumeBTchar = chars[1];
@@ -109,12 +125,15 @@ async function connect() {
                         updateVolumeSlider();
 
                         setStatus('Connected!');
+                        setStatusClass('success');
                     });
                 });
             });
         },
         (error) => {
-            setStatus('Cannot connect!');
+            setStatus('Error while conneting to the device!');
+            setStatusClass('danger');
+
             console.log(error);
         }
     );
@@ -125,7 +144,9 @@ function disconnect() {
     if(BTserver != null) {
         BTserver.disconnect();
 
-        setStatus('Disconnected');
+        setStatus('Disconnected!');
+        setStatusClass('warning');
+
         disconnectedBtns();
 
         jobChain = null;
@@ -154,6 +175,8 @@ function addWriteJob(char, bufferToBeSended) {
             console.log(error);
 
             setStatus('Disconnected');
+            setStatusClass('warning');
+
             disconnectedBtns();
 
             jobChain = null;
@@ -193,6 +216,9 @@ function updateVolumeSlider() {
         });
     }
     else {
+        setStatus('Disconnected');
+        setStatusClass('warning');
+
         disconnectedBtns();
     }
 }
@@ -203,6 +229,9 @@ function volumeChanged(event) {
         addWriteJob(volumeBTchar, [event.target.value]);
     }
     else {
+        setStatus('Disconnected');
+        setStatusClass('warning');
+
         disconnectedBtns();
     }
 }
@@ -219,6 +248,9 @@ document.addEventListener('keydown', (event) => {
         addWriteJob(letterBTchar, [charToBeSended]);
     }
     else {
+        setStatus('Disconnected');
+        setStatusClass('warning');
+
         disconnectedBtns();
     }  
 });

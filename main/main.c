@@ -16,6 +16,7 @@
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "driver/timer.h"
+#include "nvs.h"
 
 #include "ble_receiver.h"
 
@@ -31,6 +32,9 @@
 
 QueueHandle_t queue = NULL, out_queue = NULL;
 SemaphoreHandle_t out_queue_sem = NULL;
+nvs_handle_t settings_nvs;
+#define VOLUME_NVS_KEY "volume" 
+#define SETTINGS_NVS_KEY "settings"
 
 
 #define APP_NAME "MORSE_CODE"
@@ -47,8 +51,11 @@ SemaphoreHandle_t out_queue_sem = NULL;
 
 
 void update_volume(uint8_t new_volume) {
+    esp_err_t err = nvs_set_u8(settings_nvs, VOLUME_NVS_KEY, new_volume);
+    ESP_ERROR_CHECK(err);
+
     uint16_t vol_handle = profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR];
-    esp_err_t err = esp_ble_gatts_set_attr_value(vol_handle, 1, &new_volume);
+    err = esp_ble_gatts_set_attr_value(vol_handle, 1, &new_volume);
     ESP_ERROR_CHECK(err);
 
     float perc = (float)new_volume/255.0;
@@ -336,6 +343,32 @@ esp_err_t out_control_timer_init() {
 }
 
 
+esp_err_t restore_volume() {
+    uint8_t stored_volume, initial_volume = 128;
+    esp_err_t err = nvs_get_u8(settings_nvs, VOLUME_NVS_KEY, &stored_volume);
+    if(err == ESP_ERR_NVS_NOT_FOUND) { //Volume was not written yet
+        ESP_LOGI(APP_NAME, "Volume initialization! (to %d)", initial_volume);
+        err = nvs_set_u8(settings_nvs, VOLUME_NVS_KEY, initial_volume);
+    }   stored_volume = initial_volume;
+
+    if(err != ESP_OK) {
+        ESP_LOGE(APP_NAME, "Volume restoration failed! (0x%x)", err - ESP_ERR_NVS_BASE);
+        return err;
+    }
+
+    update_volume(stored_volume);
+
+    return ESP_OK;
+}
+
+
+void char_added_cb(uint16_t char_handle) {
+    if(profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR] == char_handle) {
+        ESP_ERROR_CHECK(restore_volume());
+    }
+}
+
+
 TaskHandle_t translator_handle = NULL;
 
 void app_main(void) {
@@ -364,10 +397,13 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(err);
 
+    err = nvs_open(SETTINGS_NVS_KEY, NVS_READWRITE, &settings_nvs);
+    ESP_ERROR_CHECK(err);
+
     err = ledc_init();
     ESP_ERROR_CHECK(err);
 
-    err = bluetooth_init(write_event_handler);
+    err = bluetooth_init(write_event_handler, char_added_cb);
     ESP_ERROR_CHECK(err);
 
     err = out_control_timer_init();
@@ -378,6 +414,9 @@ void app_main(void) {
     ESP_ERROR_CHECK(err);
 
     err = gpio_set_level(LED_GPIO, 0);
+    ESP_ERROR_CHECK(err);
+
+    err = restore_volume();
     ESP_ERROR_CHECK(err);
 
     xTaskCreatePinnedToCore(translate, "translator", 4096, NULL, 10, &translator_handle, 1);

@@ -84,7 +84,7 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
 extern struct gatts_profile_inst profile_tab[];
 
 
-esp_err_t bluetooth_init(void (*write_event_handler_func)(esp_ble_gatts_cb_param_t *));
+esp_err_t bluetooth_init(void (*write_event_handler_func)(esp_ble_gatts_cb_param_t *), void (*add_char_cb_func)(uint16_t));
 
 
 #endif

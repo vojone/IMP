@@ -6,12 +6,108 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Morse code transmitter</title>
     <script src="main.js" type="text/javascript"></script>
+    <style>
+        * {
+            font-family: 'Calibri';
+            box-sizing: border-box;
+        }
+
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+
+            text-align: center;
+            padding: 20px;
+
+            font-weight: bold;
+
+            font-size: 1.1em;
+
+            max-height: 100px;
+        }
+
+        .default {
+            background-color: whitesmoke;
+            color: black;
+        }
+
+        .success {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .info {
+            background-color: #17a2b8;
+            color: white;
+        }
+
+        .warning {
+            background-color: #ffc107;
+            color: black;
+        }
+
+        .danger {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .control-panel {
+            padding: 0;
+        }
+
+        main {
+            position: relative;
+
+            margin: 0 auto;
+            max-width: 800px;
+        }
+
+        .row {
+            width: 100%;
+
+            display: flex;
+
+            justify-content: space-between;
+            align-items: center;
+        }
+
+    </style>
 </head>
-<body onload="startup()">
-    <div id="status"></div>
-    <input onclick="connect()" type="button" id="connect" value="Connect" disabled>
-    <input onclick="disconnect()" type="button" id="disconnect" value="Disconnect" disabled>
-    <input onclick="readVolume()" type="button" id="readvol" value="Read volume">
-    <input type="range" min="0" max="255" id="volume" value="" onchange="volumeChanged(event)" disabled>
+<body onload="startup()" antialiased="true">
+    <div id="status" class="status-bar default">Please connect to the device...</div>
+    <main>
+        <div><h2>Morse code transmitter</h2></div>
+        <div class="control-panel">
+            <div class="row">
+                <input onclick="connect()" type="button" id="connect" value="Connect" disabled>
+                <input onclick="disconnect()" type="button" id="disconnect" value="Disconnect" disabled>
+            </div>
+            <div class="row>
+                <input onclick="readVolume()" type="button" id="readvol" value="Read volume">
+                <input onclick="abort()" type="button" id="abort" value="Abort">
+                <div>
+                    <label>Volume</label>
+                    <input type="range" min="0" max="255" id="volume" value="" onchange="volumeChanged(event)" disabled>
+                </div>
+                <div>
+                    <label>Mode</label>
+                    <select>
+                        <option value="type">Type-send</option>
+                        <option vylue="batch">Batch transmission</option>
+                    </select>
+                    </div>
+            </div>
+        </div>
+        <div id="type" class="input">
+
+        </div>
+        <div id="batch" class="input">
+            <textarea id="message">
+
+            </textarea>
+        </div>
+    </main>
 </body>
 </html>
