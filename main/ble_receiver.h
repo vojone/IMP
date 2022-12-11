@@ -12,6 +12,7 @@
 #include <string.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "driver/gpio.h"
 
 #include "esp_bt.h"
 #include "esp_bt_main.h"
@@ -36,9 +37,13 @@
 #define GATTS_CHAR_UUID_MORSE_CODE_RECEIVER_VOL 0x0001
 #define GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_VOL 0x0001
 
-#define GATTS_NUM_HANDLE_MORSE_CODE 7 //< The number of addresable attributes on a GATT server (service, characteristic, char_val, char_descriptor)
-//1 service + 2 characteristics + 2 characteristic values + 2 characteristic descriptors
+#define GATTS_CHAR_UUID_MORSE_CODE_RECEIVER_ABORT 0x0002
+#define GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_ABORT 0x0002
 
+#define GATTS_NUM_HANDLE_MORSE_CODE 10 //< The number of addresable attributes on a GATT server (service, characteristic, char_val, char_descriptor)
+//1 service + 3 characteristics + 3 characteristic values + 3 characteristic descriptors
+
+#define CONNECTION_GPIO GPIO_NUM_2
 
 enum profiles {
     MORSE_CODE_RECEIVER_ID,
@@ -46,8 +51,9 @@ enum profiles {
 };
 
 enum morse_code_rec_chars {
-    LETTER_CHAR,
-    VOLUME_CHAR,  
+    LETTER_CHAR,  
+    VOLUME_CHAR,
+    ABORT_CHAR,  
     MORSE_CODE_REC_CHAR_NUM,
 };
 

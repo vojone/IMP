@@ -19,6 +19,9 @@ static esp_gatt_perm_t morse_code_letter_permissions = ESP_GATT_PERM_WRITE; //< 
 static esp_gatt_char_prop_t morse_code_vol_properties = ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_READ; //< Just hint for client what actions he is able to do with characteristic
 static esp_gatt_perm_t morse_code_vol_permissions = ESP_GATT_PERM_WRITE | ESP_GATT_PERM_READ; //< The GATT server will reject read event of morse code message characteristic
 
+static esp_gatt_char_prop_t morse_code_abort_properties = ESP_GATT_CHAR_PROP_BIT_WRITE; //< Just hint for client what actions he is able to do with characteristic
+static esp_gatt_perm_t morse_code_abort_permissions = ESP_GATT_PERM_WRITE; //< The GATT server will reject read event of morse code message characteristic
+
 
 struct gatts_profile_inst profile_tab[PROFILE_NUM] = { //< Table with all provided profiles of this GATT server
     [MORSE_CODE_RECEIVER_ID] = {
@@ -56,6 +59,16 @@ esp_attr_value_t morse_code_volume_char_val = {
     .attr_len = 1,
     .attr_value = morse_code_volume_val,
 };
+
+
+uint8_t morse_code_abort_val[] = { 0x00 };
+
+esp_attr_value_t morse_code_abort_char_val = {
+    .attr_max_len = 1,
+    .attr_len = 1,
+    .attr_value = morse_code_abort_val,
+};
+
 
 
 /**
@@ -213,6 +226,23 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
             ESP_LOGI(MODULE_TAG, "%s volume characteristic is adding!", __func__);
         }
 
+        profile_tab[MORSE_CODE_RECEIVER_ID].char_uuid.len = ESP_UUID_LEN_16;
+        profile_tab[MORSE_CODE_RECEIVER_ID].char_uuid.uuid.uuid16 = GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_ABORT; //< Setting the UUID of characteristic
+        err = esp_ble_gatts_add_char( //< Adding characteristic for reading and setting volume of buzzer
+            profile_tab[MORSE_CODE_RECEIVER_ID].service_handle,
+            &profile_tab[MORSE_CODE_RECEIVER_ID].char_uuid,
+            morse_code_abort_permissions,
+            morse_code_abort_properties,
+            &morse_code_abort_char_val, //< Buffer to store volume value
+            NULL
+        );
+        if(err != ESP_OK) {
+            ESP_LOGE(MODULE_TAG, "%s: esp_ble_gatts_add_char failed (%s)", __func__, esp_err_to_name(err));
+        }
+        else {
+            ESP_LOGI(MODULE_TAG, "%s volume characteristic is adding!", __func__);
+        }
+
         break;
 
     case ESP_GATTS_START_EVT: //< Service started
@@ -246,6 +276,10 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         if(params->add_char.char_uuid.uuid.uuid16 == GATTS_CHAR_UUID_MORSE_CODE_RECEIVER_LETTER) {
             profile_tab[MORSE_CODE_RECEIVER_ID].descr_uuid.uuid.uuid16 = GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_LETTER;
             profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[LETTER_CHAR] = params->add_char.attr_handle;
+        }
+        else if(params->add_char.char_uuid.uuid.uuid16 == GATTS_CHAR_UUID_MORSE_CODE_RECEIVER_ABORT) {
+            profile_tab[MORSE_CODE_RECEIVER_ID].descr_uuid.uuid.uuid16 = GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_ABORT;
+            profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[ABORT_CHAR] = params->add_char.attr_handle;
         }
         else {
             profile_tab[MORSE_CODE_RECEIVER_ID].descr_uuid.uuid.uuid16 = GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_VOL;
@@ -283,6 +317,10 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
             ESP_BD_ADDR_HEX(params->connect.remote_bda)
         );
         profile_tab[MORSE_CODE_RECEIVER_ID].conn_id = params->connect.conn_id; //< Save client conn id to profile tab
+
+        err = gpio_set_level(CONNECTION_GPIO, 1);
+        ESP_ERROR_CHECK(err);
+
         break;
 
     case ESP_GATTS_READ_EVT: //< Clien wants to read char
@@ -383,6 +421,9 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         ESP_LOGI(MODULE_TAG, "DISCONNECT_EVT, remote=" ESP_BD_ADDR_STR, 
             ESP_BD_ADDR_HEX(params->disconnect.remote_bda)
         );
+
+        err = gpio_set_level(CONNECTION_GPIO, 0);
+        ESP_ERROR_CHECK(err);
 
         esp_ble_gap_start_advertising(&adv_params);
         break;
@@ -492,6 +533,13 @@ void register_add_char_cb(void (*add_char_cb_func)(uint16_t)) {
 
 esp_err_t bluetooth_init(void (*write_event_handler_func)(esp_ble_gatts_cb_param_t *), void (*add_char_cb_func)(uint16_t)) {
     esp_err_t err;
+
+    gpio_pad_select_gpio(CONNECTION_GPIO);
+    err = gpio_set_direction(CONNECTION_GPIO, GPIO_MODE_OUTPUT);
+    ESP_ERROR_CHECK(err);
+
+    err = gpio_set_level(CONNECTION_GPIO, 0);
+    ESP_ERROR_CHECK(err);
 
     esp_bt_controller_config_t bt_config = BT_CONTROLLER_INIT_CONFIG_DEFAULT(); //< Use default configuration
     err = esp_bt_controller_init(&bt_config); //< Initialize and allocate task and other resources

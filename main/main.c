@@ -96,6 +96,20 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
             }
         }
     }
+    else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[ABORT_CHAR]) {
+        ESP_LOGI(MODULE_TAG, "Writing to abort characteristic");
+
+        if(queue)
+            xQueueReset(queue);
+        if(out_queue)
+            xQueueReset(out_queue);
+
+        esp_err_t err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
+        ESP_ERROR_CHECK(err);
+
+        err = gpio_set_level(LED_GPIO, 0);
+        ESP_ERROR_CHECK(err);
+    }
     else {
         ESP_LOGE(MODULE_TAG, "Unrecognized handle!, handle=%d", params->write.handle);
     }

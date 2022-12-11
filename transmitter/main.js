@@ -6,6 +6,7 @@ const minIntervalMs = 500;
 var BTserver = null; //BluetoothRemoteGATTServer
 var letterBTchar = null; //Characteristic of BTserver for writing letters
 var volumeBTchar = null; //Characteristic of BTserver for reading current volume
+var abortBTchar = null; //Characteristic of BTserver for aborting morse beeping
 var jobChain = null; //Chain of promises for BTserver (to avoid sending request when server is busy)
 
 function isBtSupported() {
@@ -120,6 +121,7 @@ async function connect() {
                         BTserver = server;
                         letterBTchar = chars[0];
                         volumeBTchar = chars[1];
+                        abortBTchar = chars[2];
 
                         connectedBtns();
                         updateVolumeSlider();
@@ -155,6 +157,7 @@ function disconnect() {
         BTserver = null;
         letterBTchar = null;
         volumeBTchar = null;
+        abortBTchar = null;
     }
 }
 
@@ -185,6 +188,7 @@ function addWriteJob(char, bufferToBeSended) {
             BTserver = null;
             letterBTchar = null;
             volumeBTchar = null;
+            abortBTchar = null;
         })
     );
 
@@ -216,6 +220,19 @@ function updateVolumeSlider() {
         (error) => {
             console.log(error);
         });
+    }
+    else {
+        setStatus('Disconnected');
+        setStatusClass('warning');
+
+        disconnectedBtns();
+    }
+}
+
+
+function abort() {
+    if(abortBTchar != null && BTserver != null) {
+        addWriteJob(abortBTchar, [1]);
     }
     else {
         setStatus('Disconnected');
