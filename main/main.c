@@ -1,7 +1,7 @@
 /**
  * @file main.c
  * @author Vojtěch Dvořák (xdvora3o)
- * @date 2022-11-04
+ * @date 2022-12-12
  */
 
 #include <stdio.h>
@@ -19,38 +19,46 @@
 #include "nvs.h"
 
 #include "ble_receiver.h"
+#include "translator.h"
 
-#define LEDC_TIMER_RESOLUTION LEDC_TIMER_13_BIT
-#define LEDC_SPEED_MODE LEDC_LOW_SPEED_MODE
-#define BUZZER_CHANNEL LEDC_CHANNEL_0
-#define BUZZER_LEDC_TIMER LEDC_TIMER_0
-#define LEDC_TIMER_FREQ 5000
 
-#define BUZZER_GPIO GPIO_NUM_5
+#define APP_NAME "MORSE_CODE" //App name (for logs)
+
+
+#define LEDC_TIMER_RESOLUTION LEDC_TIMER_13_BIT //< Timer resolution for buzzer PWM
+#define LEDC_SPEED_MODE LEDC_LOW_SPEED_MODE //< Speed mode for buzzer PWM
+#define BUZZER_CHANNEL LEDC_CHANNEL_0 //< Channel for buzzer PWM
+#define BUZZER_LEDC_TIMER LEDC_TIMER_0 //< Timer for buzzer PWM
+#define LEDC_TIMER_FREQ 5000 //< Timer frequency for buzzer PWM
+
+#define BUZZER_GPIO GPIO_NUM_5 
 #define LED_GPIO GPIO_NUM_14
 
 
-QueueHandle_t queue = NULL, out_queue = NULL;
-SemaphoreHandle_t out_queue_sem = NULL;
-nvs_handle_t settings_nvs;
+nvs_handle_t settings_nvs; //< Handle for storing settings (like volume)
+
+//Handle keys
 #define VOLUME_NVS_KEY "volume" 
 #define SETTINGS_NVS_KEY "m_c_settings"
 
-
-#define APP_NAME "MORSE_CODE"
-
-#define MAXIMUM_MESSAGE_LEN 1
-#define MAXIMUM_MESSAGE_NUM 1024
-
-#define MAXIMUM_OUT_CONTROL_NUM 4096
-
+//Timer settings
 #define TIMER_DIVIDER (16)
 #define TIMER_SCALE (TIMER_BASE_CLK / TIMER_DIVIDER)
 
+
+//Base time interval (dettermines the length of one out_control interval)
 #define BASE_TIME_INT_MS 250
 
 
+
+/**
+ * @brief Updates volume level of the morse receiver
+ * 
+ * @param new_volume The new volume level
+ */
 void update_volume(uint8_t new_volume) {
+
+    //Remeber value (in NVS)
     esp_err_t err = nvs_set_u8(settings_nvs, VOLUME_NVS_KEY, new_volume);
     ESP_ERROR_CHECK(err);
 
@@ -62,6 +70,7 @@ void update_volume(uint8_t new_volume) {
     ESP_LOGI(APP_NAME, "val %d", val);
     ESP_ERROR_CHECK(err);
 
+    //Update characteristic value
     uint16_t vol_handle = profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR];
     err = esp_ble_gatts_set_attr_value(vol_handle, 1, &new_volume);
     ESP_ERROR_CHECK(err);
@@ -70,18 +79,25 @@ void update_volume(uint8_t new_volume) {
 
     unsigned new_duty = (unsigned)((1 << LEDC_TIMER_RESOLUTION)*perc);
 
+    //Update duty of PWM
     ledc_set_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL, new_duty);
 }
 
+
+/**
+ * @brief Write event handler for bluetooth module
+ * 
+ * @param params 
+ */
 void write_event_handler(esp_ble_gatts_cb_param_t *params) {
     char buffer[MAXIMUM_MESSAGE_LEN + 1];
 
-    if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR]) {
+    if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR]) { //Volume write
         ESP_LOGI(MODULE_TAG, "Writing to volume characteristic");
 
         update_volume(params->write.value[0]);
     }
-    else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[LETTER_CHAR]) {
+    else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[LETTER_CHAR]) { //Letter (meesage) write
         ESP_LOGI(MODULE_TAG, "Writing to letter characteristic");
 
         size_t message_len = MAXIMUM_MESSAGE_LEN >= params->write.len ? MAXIMUM_MESSAGE_LEN : params->write.len;
@@ -96,7 +112,7 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
             }
         }
     }
-    else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[ABORT_CHAR]) {
+    else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[ABORT_CHAR]) { //Abort char
         ESP_LOGI(MODULE_TAG, "Writing to abort characteristic");
 
         if(queue)
@@ -110,17 +126,19 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
         err = gpio_set_level(LED_GPIO, 0);
         ESP_ERROR_CHECK(err);
     }
-    else {
+    else { //Unrecognized char
         ESP_LOGE(MODULE_TAG, "Unrecognized handle!, handle=%d", params->write.handle);
     }
 }
 
-typedef struct out_control {
-    uint8_t buzz_state;
-    uint8_t led_state;
-} out_control_t;
 
-
+/**
+ * @brief ISR for interrupts from timer (they comes every BASE_TIME_INT_MS), translates out control sequence to beeping and blinking
+ * 
+ * @param args 
+ * @return true 
+ * @return false 
+ */
 static bool IRAM_ATTR out_control_routine(void *args) {
     esp_err_t err;
     BaseType_t higher_priority_task_woken = pdFALSE;
@@ -131,7 +149,7 @@ static bool IRAM_ATTR out_control_routine(void *args) {
         if(xQueueReceiveFromISR(out_queue, &out_control, &higher_priority_task_woken)) {
             ets_printf("Picked BUZZ %d LED %d\n", out_control.buzz_state, out_control.led_state);
 
-            if(out_control.buzz_state > 0) {
+            if(out_control.buzz_state > 0) { //Beep if related out control is greater than zero
                 out_control.buzz_state--;
 
                 will_be_returned = true;
@@ -144,7 +162,7 @@ static bool IRAM_ATTR out_control_routine(void *args) {
                 ESP_ERROR_CHECK(err);
             }
 
-            if(out_control.led_state > 0) {
+            if(out_control.led_state > 0) { //Turn led on if related out control is greater than zero
                 out_control.led_state--;
 
                 will_be_returned = true;
@@ -158,7 +176,7 @@ static bool IRAM_ATTR out_control_routine(void *args) {
                 ESP_ERROR_CHECK(err);
             }
 
-            if(will_be_returned == true) {
+            if(will_be_returned == true) { //Return the outcontrol to out control queue if there is still something to do in it
                 xQueueSendToFrontFromISR(out_queue, &out_control, &higher_priority_task_woken);
             }   
         }
@@ -170,106 +188,12 @@ static bool IRAM_ATTR out_control_routine(void *args) {
 }
 
 
-typedef struct translation {
-    char ch; //< Character
-    char *mc; //< Morse code representation
-} translation_t;
-
-
-const char *char_lookup(char tb_tr) {
-    static translation_t tr_tab[] = {
-        { .ch = 0, .mc = NULL}, 
-        { .ch = ' ', .mc = "/"},       { .ch = '.', .mc = "//"},        { .ch = '1', .mc = ".----"}, 
-        { .ch = '2', .mc = "..---"},    { .ch = '3', .mc = "...--"},    { .ch = '4', .mc = "....-"}, 
-        { .ch = '5', .mc = "....."},    { .ch = '6', .mc = "-...."},    { .ch = '7', .mc = "--..."}, 
-        { .ch = '8', .mc = "---.."},    { .ch = '9', .mc = "----."},    { .ch = '0', .mc = "-----"},  
-        { .ch = 'a', .mc = ".-"},       { .ch = 'b', .mc = "-..."},     { .ch = 'c', .mc = "-.-."}, 
-        { .ch = 'd', .mc = "-.."},      { .ch = 'e', .mc = "."},        { .ch = 'f', .mc = "..-."},   
-        { .ch = 'g', .mc = "--."},      { .ch = 'h', .mc = "...."},     { .ch = 'i', .mc = ".."},      
-        { .ch = 'j', .mc = ".---"},     { .ch = 'k', .mc = "-.-"},      { .ch = 'l', .mc = ".-.."},     
-        { .ch = 'm', .mc = "--"},       { .ch = 'n', .mc = "-."},       { .ch = 'o', .mc = "---"},      
-        { .ch = 'p', .mc = ".--."},     { .ch = 'q', .mc = "--.-"},     { .ch = 'r', .mc = ".-."},  
-        { .ch = 's', .mc = "..."},      { .ch = 't', .mc = "-"},        { .ch = 'u', .mc = "..-"},  
-        { .ch = 'v', .mc = "...-"},     { .ch = 'w', .mc = ".--"},      { .ch = 'x', .mc = "-..-"}, 
-        { .ch = 'y', .mc = "-.--"},     { .ch = 'z', .mc = "--.."},     { .ch = 0, .mc = NULL}, 
-    };
-
-    static const size_t approx_middle_i = 19;
-    static translation_t * approx_middle = &(tr_tab[approx_middle_i]);
-
-    int i = approx_middle_i;
-    for(; tr_tab[i].ch && tr_tab[i].mc && tr_tab[i].ch != tb_tr; tb_tr < approx_middle->ch ? i-- : i++);
-
-    if(tr_tab[i].ch && tr_tab[i].mc) {
-        return tr_tab[i].mc;
-    }
-    else {
-        return NULL;
-    }
-}
 
 
 /**
- * @brief 
+ * @brief Initialization of PWM (ledc) for buzzer
  * 
- * @param arg 
- */
-void translate(void *arg) {
-    esp_err_t err;
-    char buffer[MAXIMUM_MESSAGE_LEN + 1];
-
-    while(1) {
-        if(xQueueReceive(queue, buffer, (TickType_t)5)) { //5 ticks block if letter is not currently available
-            printf("Read %s from letter queue\n", buffer);
-
-            for(int i = 0; i < MAXIMUM_MESSAGE_LEN; i++) {
-                char cur_char = buffer[i];
-
-                const char *morse_code = char_lookup(cur_char);
-                if(!morse_code) {
-                    ESP_LOGE(APP_NAME, "Unable to find character in lookup table!");
-                    continue;
-                }
-                else {
-                    if(xSemaphoreTake(out_queue_sem, portMAX_DELAY) == pdTRUE) {
-
-                        for(int j = 0; morse_code[j]; j++) {
-                            out_control_t out_c = { .buzz_state = 0, .led_state = 0};
-                            switch(morse_code[j]) {
-                                case '.':
-                                    out_c.buzz_state = 1;
-                                    break;
-                                case '-' :
-                                    out_c.buzz_state = 3;
-                                    break;
-                                default:
-                                    out_c.led_state = 1;
-                                    break;
-                            }
-
-                            if(xQueueSend(out_queue, &out_c, (TickType_t)5) != pdPASS) {
-                                ESP_LOGE(MODULE_TAG, "Writing letter to the queue failed!");
-                            }
-                        }
-
-                        xSemaphoreGive(out_queue_sem);
-
-                        ESP_LOGI(APP_NAME, "Translated to %s and written it to out control queue...", morse_code);
-                    }
-                    else {
-                        ESP_LOGI(APP_NAME, "Unable to obtain out_queue_sem! Skipping %c...", cur_char);
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-/**
- * @brief 
- * 
- * @return esp_err_t 
+ * @return esp_err_t ESP_OK if everyhing went ok
  */
 esp_err_t ledc_init() {
     esp_err_t err;
@@ -304,6 +228,7 @@ esp_err_t ledc_init() {
         return err;
     }
 
+    //Initial level of PWM
     err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
     if(err) {
         ESP_LOGE(APP_NAME, "ledc_stop failed!");
@@ -314,6 +239,11 @@ esp_err_t ledc_init() {
 }
 
 
+/**
+ * @brief Initilization of timer for beeping and blinking
+ * 
+ * @return esp_err_t ESP_OK if everyhing went ok
+ */
 esp_err_t out_control_timer_init() {
     esp_err_t err;
 
@@ -337,6 +267,7 @@ esp_err_t out_control_timer_init() {
         return err;
     }
 
+    //Interupts should come every BASE_TIME_INT_MS
     err = timer_set_alarm_value(TIMER_GROUP_0, TIMER_0, (int)((BASE_TIME_INT_MS * 1e-3) * TIMER_SCALE)); //Time in secs * scale
     if(err != ESP_OK) {
         ESP_LOGE(APP_NAME, "timer_set_alarm_value failed!");
@@ -349,6 +280,7 @@ esp_err_t out_control_timer_init() {
         return err;
     }
 
+    //Register ISR
     err = timer_isr_callback_add(TIMER_GROUP_0, TIMER_0, out_control_routine, NULL,  0);
     if(err != ESP_OK) {
         ESP_LOGE(APP_NAME, "timer_isr_callback_add failed!");
@@ -365,6 +297,11 @@ esp_err_t out_control_timer_init() {
 }
 
 
+/**
+ * @brief Restores the volume level after the reset
+ * 
+ * @return esp_err_t ESP_OK if everything went OK
+ */
 esp_err_t restore_volume() {
     uint8_t stored_volume, initial_volume = 128;
     esp_err_t err = nvs_get_u8(settings_nvs, VOLUME_NVS_KEY, &stored_volume);
@@ -389,6 +326,11 @@ esp_err_t restore_volume() {
 }
 
 
+/**
+ * @brief Initialization of volume characteristic after reset
+ * 
+ * @param char_handle 
+ */
 void char_added_cb(uint16_t char_handle) {
     if(profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR] == char_handle) {
         ESP_ERROR_CHECK(restore_volume());
@@ -398,24 +340,15 @@ void char_added_cb(uint16_t char_handle) {
 
 TaskHandle_t translator_handle = NULL;
 
+/**
+ * @brief The main body of the app
+ * 
+ */
 void app_main(void) {
     esp_err_t err;
 
-    queue = xQueueCreate(MAXIMUM_MESSAGE_NUM, MAXIMUM_MESSAGE_LEN + 1);
-    if(!queue) {
-        ESP_LOGE(MODULE_TAG, "Unable to create queue for letters!");
-    }
-
-    out_queue = xQueueCreate(MAXIMUM_OUT_CONTROL_NUM, sizeof(out_control_t));
-    if(!out_queue) {
-        ESP_LOGE(MODULE_TAG, "Unable to create queue for out control!");
-    }
-
-    out_queue_sem = xSemaphoreCreateBinary();
-    if(!out_queue_sem) {
-        ESP_LOGE(MODULE_TAG, "Unable to create semaphore for out queue!");
-    }
-    xSemaphoreGive(out_queue_sem);
+    err = translator_init();
+    ESP_ERROR_CHECK(err);
 
     err = nvs_flash_init();
     if(err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) { //< Potentially recoverable errors
@@ -434,6 +367,7 @@ void app_main(void) {
     err = bluetooth_init(write_event_handler, char_added_cb);
     ESP_ERROR_CHECK(err);
 
+    //Intialization of buzzer and led
     err = out_control_timer_init();
     ESP_ERROR_CHECK(err);
 
@@ -444,8 +378,6 @@ void app_main(void) {
     err = gpio_set_level(LED_GPIO, 0);
     ESP_ERROR_CHECK(err);
 
-    err = restore_volume();
-    ESP_ERROR_CHECK(err);
 
     xTaskCreatePinnedToCore(translate, "translator", 4096, NULL, 10, &translator_handle, 1);
 }

@@ -1,7 +1,10 @@
 /**
  * @file ble_receiver.c
+ * 
+ * @brief Implementation of bluetooth (BLE) module for morse code receiver
+ * 
  * @author Vojtěch Dvořák (xdvora3o)
- * @date 2022-12-05
+ * @date 2022-12-12
  */
 
 #include "ble_receiver.h"
