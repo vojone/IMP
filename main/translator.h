@@ -11,14 +11,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "esp_log.h"
-#include "freertos/queue.h"
-#include "freertos/semphr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/event_groups.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "esp_log.h"
+
+#include "ble_receiver.h"
+#include "translator.h"
 
 
-#define MODULE_TAG "TRANSLATOR" //< Module name
+#define TRANSLATOR_TAG "TRANSLATOR" //< Module name
 
 #define MAXIMUM_MESSAGE_LEN 1 //< Maximum size of one buffer stored in message queue
 #define MAXIMUM_MESSAGE_NUM 1024 //< MAximum size of letter queue

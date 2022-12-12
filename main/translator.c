@@ -6,11 +6,25 @@
 
 #include "translator.h"
 
+QueueHandle_t out_queue = NULL; //< Queue of out controls
+QueueHandle_t queue = NULL; //< Queue of letters
 
-QueueHandle_t queue = NULL, out_queue = NULL;
+
+/**
+ * @brief Handle for semaphore that should be checked before reading from the out control queue 
+ * (to letter consistency)
+ * 
+ */
 SemaphoreHandle_t out_queue_sem = NULL;
 
 
+
+/**
+ * @brief Performs translation of character to the sequence of . and - (or /)
+ * 
+ * @param tb_tr char to be translated
+ * @return const char* translated sequence
+ */
 const char *char_lookup(char tb_tr) {
     static translation_t tr_tab[] = {
         { .ch = 0, .mc = NULL}, 
@@ -29,7 +43,7 @@ const char *char_lookup(char tb_tr) {
         { .ch = 'y', .mc = "-.--"},     { .ch = 'z', .mc = "--.."},     { .ch = 0, .mc = NULL}, 
     };
 
-    static const size_t approx_middle_i = 19;
+    static const size_t approx_middle_i = 19; //Aproximately middle of the tab (optimization, BUT TABLE MUST BE ORDERED!)
     static translation_t * approx_middle = &(tr_tab[approx_middle_i]);
 
     int i = approx_middle_i;
@@ -52,21 +66,21 @@ const char *char_lookup(char tb_tr) {
 esp_err_t translator_init() {
     queue = xQueueCreate(MAXIMUM_MESSAGE_NUM, MAXIMUM_MESSAGE_LEN + 1);
     if(!queue) {
-        ESP_LOGE(MODULE_TAG, "Unable to create queue for letters!");
+        ESP_LOGE(TRANSLATOR_TAG, "Unable to create queue for letters!");
 
         return ESP_ERR_NO_MEM;
     }
 
     out_queue = xQueueCreate(MAXIMUM_OUT_CONTROL_NUM, sizeof(out_control_t));
     if(!out_queue) {
-        ESP_LOGE(MODULE_TAG, "Unable to create queue for out control!");
+        ESP_LOGE(TRANSLATOR_TAG, "Unable to create queue for out control!");
 
         return ESP_ERR_NO_MEM;
     }
 
     out_queue_sem = xSemaphoreCreateBinary();
     if(!out_queue_sem) {
-        ESP_LOGE(MODULE_TAG, "Unable to create semaphore for out queue!");
+        ESP_LOGE(TRANSLATOR_TAG, "Unable to create semaphore for out queue!");
 
         return ESP_ERR_NO_MEM;
     }
@@ -81,7 +95,6 @@ esp_err_t translator_init() {
  * @param arg 
  */
 void translate(void *arg) {
-    esp_err_t err;
     char buffer[MAXIMUM_MESSAGE_LEN + 1];
 
     while(1) {
@@ -95,7 +108,7 @@ void translate(void *arg) {
 
                 const char *morse_code = char_lookup(cur_char); //Find translation for the current letter
                 if(!morse_code) {
-                    ESP_LOGE(MODULE_TAG, "Unable to find character in lookup table!");
+                    ESP_LOGE(TRANSLATOR_TAG, "Unable to find character in lookup table!");
                     continue;
                 }
                 else {
@@ -118,17 +131,17 @@ void translate(void *arg) {
 
                             //Send translated symbol to the out control queue
                             if(xQueueSend(out_queue, &out_c, (TickType_t)5) != pdPASS) {
-                                ESP_LOGE(MODULE_TAG, "Writing letter to the queue failed!");
+                                ESP_LOGE(TRANSLATOR_TAG, "Writing letter to the queue failed!");
                             }
                         }
 
                         //The whole letter is tranlated so release the semaphore
                         xSemaphoreGive(out_queue_sem);
 
-                        ESP_LOGI(MODULE_TAG, "Translated to %s and written it to out control queue...", morse_code);
+                        ESP_LOGI(TRANSLATOR_TAG, "Translated to %s and written it to out control queue...", morse_code);
                     }
                     else {
-                        ESP_LOGI(MODULE_TAG, "Unable to obtain out_queue_sem! Skipping %c...", cur_char);
+                        ESP_LOGI(TRANSLATOR_TAG, "Unable to obtain out_queue_sem! Skipping %c...", cur_char);
                     }
                 }
             }
