@@ -1,4 +1,9 @@
-const deviceName = 'Morse code - receiver';
+/**
+ * BLE low energy transmitter for morse code ESP32 project
+ * @author Vojtech Dvorak (xdvora3o)
+ */
+
+const deviceName = 'Morse code - receiver'; //Expected device name
 const serviceId = '0000abcd-0000-1000-8000-00805f9b34fb'; //Our custom service UUID + base UUID
 
 const minIntervalMs = 500;
@@ -8,6 +13,7 @@ var letterBTchar = null; //Characteristic of BTserver for writing letters
 var volumeBTchar = null; //Characteristic of BTserver for reading current volume
 var abortBTchar = null; //Characteristic of BTserver for aborting morse beeping
 var jobChain = null; //Chain of promises for BTserver (to avoid sending request when server is busy)
+
 
 function isBtSupported() {
     return (navigator.bluetooth) ? true : false;
@@ -24,17 +30,27 @@ function setStatus(newStatusHTML) {
 }
 
 
+/**
+ * Sets all buttons to the disconnected state
+ */
 function disconnectedBtns() {
     document.getElementById('disconnect').disabled = true;
     document.getElementById('volume').disabled = true;
     document.getElementById('connect').disabled = false;
+    document.getElementById('abort').disabled = true;
+    document.getElementById('send').disabled = true;
 }
 
 
+/**
+ * Sets all buttons to the connected state
+ */
 function connectedBtns() {
     document.getElementById('disconnect').disabled = false;
     document.getElementById('volume').disabled = false;
     document.getElementById('connect').disabled = true;
+    document.getElementById('abort').disabled = false;
+    document.getElementById('send').disabled = false;
 }
 
 
@@ -47,6 +63,11 @@ function getBtAvailability() {
 }
 
 
+/**
+ * Returns browser name (for determining if brower supports web bluetooth or not)
+ * @param {string} userAgentString 
+ * @returns string
+ */
 function getBrowserName(userAgentString) {
     let browsers = ['Firefox', 'Chrome', 'Edg', 'Opera', 'Safari'];
     
@@ -63,6 +84,10 @@ function getBrowserName(userAgentString) {
 }
 
 
+/**
+ * Checks the webbluetooth suppoert
+ * @returns boolean
+ */
 async function checkBtSupport() {
     if(!isBtSupported()) {
         let userAgent = navigator.userAgent;
@@ -85,12 +110,17 @@ async function checkBtSupport() {
     );
 }
 
-
+/**
+ * Sets the state of connect button
+ * @param {boolean} newState 
+ */
 function setConnectButtonState(newState = false) {
     document.getElementById('connect').disabled = newState;
 }
 
-
+/**
+ * Connects to the bluetooth device
+ */
 async function connect() {
     let options = {
         filters : [{ name: [deviceName] }], //Change to acceptAllDevices for all BT devices
@@ -141,7 +171,9 @@ async function connect() {
     );
 }
 
-
+/**
+ * Disconnects fro mthe bluetooth device
+ */
 function disconnect() {
     if(BTserver != null) {
         console.log(BTserver.connected);
@@ -162,12 +194,23 @@ function disconnect() {
 }
 
 
+/**
+ * Startup function when body of the document is loaded
+ */
 async function startup() {
     let result = await checkBtSupport();
     setConnectButtonState(!result);
+
+    setTypeMode();
+    unsetBatchMode();
 }
 
 
+/**
+ * Adds write job for the bluetooth device to job chain (chain of promises)
+ * @param {object} char target characteristic of bluetooth device
+ * @param {array} bufferToBeSended buffer to be sended to characteristic
+ */
 function addWriteJob(char, bufferToBeSended) {
     if(jobChain == null) {
         jobChain = new Promise((resolve) => {
@@ -199,7 +242,9 @@ function addWriteJob(char, bufferToBeSended) {
     });
 }
 
-
+/**
+ * Reads the volume from the characteristic
+ */
 function readVolume() {
     volumeBTchar.readValue().then(
     (value) => {
@@ -211,6 +256,9 @@ function readVolume() {
     });
 }
 
+/**
+ * Updates volume slider due to ESPs volume
+ */
 function updateVolumeSlider() {
     if(volumeBTchar != null && BTserver != null) {
         volumeBTchar.readValue().then(
@@ -229,7 +277,9 @@ function updateVolumeSlider() {
     }
 }
 
-
+/**
+ * Aborts the beeping of the message
+ */
 function abort() {
     if(abortBTchar != null && BTserver != null) {
         addWriteJob(abortBTchar, [1]);
@@ -242,7 +292,33 @@ function abort() {
     }
 }
 
+/**
+ * Sends the message to the ESP
+ */
+function send() {
+    if(letterBTchar != null && BTserver != null) {
+        let message = document.getElementById('message').value.trim();
 
+        if(message) {
+            console.log('Sending message to receiver...');
+
+            let messageArr = message.split('').map(ch => ch.charCodeAt(0));
+            addWriteJob(letterBTchar, messageArr);
+        }
+    }
+    else {
+        setStatus('Disconnected');
+        setStatusClass('warning');
+
+        disconnectedBtns();
+    }
+}
+
+
+/**
+ * Handler for change volume event (it is needed to send the value to the ESP characteristic)
+ * @param {event} event 
+ */
 function volumeChanged(event) {
     if(volumeBTchar != null && BTserver != null) {
         addWriteJob(volumeBTchar, [event.target.value]);
@@ -255,8 +331,27 @@ function volumeChanged(event) {
     }
 }
 
+/**
+ * Handler for changing mode event
+ * @param {*} event 
+ */
+function modeChanged(event) {
+    if(event.target.value == 'type') {
+        setTypeMode();
+        unsetBatchMode();
+    }
+    else {
+        unsetTypeMode();
+        setBatchMode();
+    }
+}
 
-document.addEventListener('keydown', (event) => {
+
+/**
+ * Resolves the keydown event
+ * @param {event} event 
+ */
+function onKeyDown(event) {
     if(letterBTchar != null && BTserver != null) {
         console.log('Adding to the queue: ' + event.key);
 
@@ -271,5 +366,29 @@ document.addEventListener('keydown', (event) => {
         setStatusClass('warning');
 
         disconnectedBtns();
-    }  
-});
+    }
+}
+
+function setTypeMode() {
+    document.getElementById('type').className = '';
+
+    document.addEventListener('keydown', onKeyDown);
+}
+
+function unsetTypeMode() {
+    document.getElementById('type').className = 'hidden';
+
+    document.removeEventListener('keydown', onKeyDown);
+}
+
+
+function setBatchMode() {
+    document.getElementById('batch').className = '';
+}
+
+
+function unsetBatchMode() {
+    document.getElementById('batch').className = 'hidden';
+}
+
+

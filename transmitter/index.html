@@ -26,6 +26,8 @@
             font-size: 1.1em;
 
             max-height: 100px;
+
+            z-index: 999;
         }
 
         .default {
@@ -62,6 +64,13 @@
 
             margin: 0 auto;
             max-width: 800px;
+            min-width: 350px;
+            padding: 20px 20px 20px 20px;
+            height: calc(100vh - 140px);
+            min-height: 650px;
+            background-color: cornsilk;
+
+            margin-bottom: 100px;
         }
 
         .row {
@@ -71,6 +80,66 @@
 
             justify-content: space-between;
             align-items: center;
+
+            margin-bottom: 20px;
+        }
+
+        input[type="button"] {
+            cursor: pointer;
+            font-size: larger;
+            padding: 10px;
+        }
+
+        input[type="button"].info {
+            background-color: #17a2b8;
+            border-color: #17a2b8;
+            border-radius: 5px;
+        }
+
+        input[type="button"].danger {
+            background-color: #dc3545;
+            border-color: #dc3545;
+            border-radius: 5px;
+        }
+
+        input[type="button"]:disabled {
+            background-color: rgb(231, 231, 231);
+            border-color: transparent;
+            color: rgb(112, 112, 112);
+
+            cursor: default;
+        }
+
+        input[type="range"] {
+            width: 200px;
+        }
+
+        select {
+            font-size: 1.1em;
+        }
+
+        label {
+            font-size: 1.1em;
+            display: block;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        textarea {
+            width: 100%;
+            min-width: 100%;
+            max-width: 100%;
+
+            min-height: 50px;
+            height: 200px;
+
+            font-size: 1.1em;
+        }
+
+        .right {
+            float: right;
         }
 
     </style>
@@ -81,32 +150,33 @@
         <div><h2>Morse code transmitter</h2></div>
         <div class="control-panel">
             <div class="row">
-                <input onclick="connect()" type="button" id="connect" value="Connect" disabled>
-                <input onclick="disconnect()" type="button" id="disconnect" value="Disconnect" disabled>
+                <input onclick="connect()" type="button" id="connect" class="info" value="Connect" disabled>
+                <input onclick="disconnect()" type="button" id="disconnect" class="danger" value="Disconnect" disabled>
             </div>
-            <div class="row>
-                <input onclick="readVolume()" type="button" id="readvol" value="Read volume">
-                <input onclick="abort()" type="button" id="abort" value="Abort">
+            <div class="row">
                 <div>
                     <label>Volume</label>
                     <input type="range" min="0" max="255" id="volume" value="" onchange="volumeChanged(event)" disabled>
                 </div>
-                <div>
-                    <label>Mode</label>
-                    <select>
-                        <option value="type">Type-send</option>
-                        <option vylue="batch">Batch transmission</option>
-                    </select>
-                    </div>
+
+                <input onclick="abort()" type="button" id="abort" class="danger" value="Abort" disabled>
+            </div>
+
+            <div>
+                <label>Mode</label>
+                <select onchange="modeChanged(event)">
+                    <option value="type">Type-send</option>
+                    <option value="batch">Batch transmission</option>
+                </select>
             </div>
         </div>
-        <div id="type" class="input">
-
+        <div id="type" class="">
+            <p>After connection to the device you can type, what you want to beeped...</p>
         </div>
-        <div id="batch" class="input">
-            <textarea id="message">
+        <div id="batch" class="hidden">
+            <textarea id="message" placeholder="Your message..."></textarea>
+            <input onclick="send()" type="button" id="send" class="info right" value="Send" disabled>
 
-            </textarea>
         </div>
     </main>
 </body>

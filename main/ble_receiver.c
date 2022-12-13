@@ -54,7 +54,10 @@ esp_attr_value_t morse_code_letter_char_val = {
 };
 
 
-
+/**
+ * @brief Characteristic value for changing volume of buzzer
+ * 
+ */
 uint8_t morse_code_volume_val[] = { 0x00 };
 
 esp_attr_value_t morse_code_volume_char_val = {
@@ -64,6 +67,10 @@ esp_attr_value_t morse_code_volume_char_val = {
 };
 
 
+/**
+ * @brief Characteristic value for aborting beeping
+ * 
+ */
 uint8_t morse_code_abort_val[] = { 0x00 };
 
 esp_attr_value_t morse_code_abort_char_val = {

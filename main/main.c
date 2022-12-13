@@ -100,15 +100,23 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
     else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[LETTER_CHAR]) { //Letter (meesage) write
         ESP_LOGI(MODULE_TAG, "Writing to letter characteristic");
 
-        size_t message_len = MAXIMUM_MESSAGE_LEN >= params->write.len ? MAXIMUM_MESSAGE_LEN : params->write.len;
+        int i = 0, j = 0;
+        while(i < params->write.len) {
+            size_t remaining_len = params->write.len - i;
+            size_t size_to_be_writen = remaining_len > MAXIMUM_MESSAGE_LEN ? MAXIMUM_MESSAGE_LEN : remaining_len;
 
-        for(int i = 0; i < params->write.len && i < MAXIMUM_MESSAGE_NUM; i++) {
-            memcpy(buffer, params->write.value, message_len);
-            memset(&(buffer[message_len]), '\0', 1);
-            // printf("%d\n", params->write.len);
-            // printf("%c %c\n", buffer[0], buffer[1]);
+            memcpy(buffer, &(params->write.value[i]), size_to_be_writen);
+            memset(&(buffer[size_to_be_writen]), '\0', 1);
+
             if(xQueueSend(queue, buffer, (TickType_t)0) != pdPASS) {
                 ESP_LOGE(MODULE_TAG, "Writing letter to the queue failed!");
+            }
+
+            i += size_to_be_writen;
+            j++;
+
+            if(j >= MAXIMUM_MESSAGE_NUM) {
+                break;
             }
         }
     }

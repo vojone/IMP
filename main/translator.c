@@ -92,7 +92,7 @@ esp_err_t translator_init() {
 /**
  * @brief Translates letters fro queue to the control structures (that can be easily intepreted)
  * 
- * @param arg 
+ * @param arg No args are necessary
  */
 void translate(void *arg) {
     char buffer[MAXIMUM_MESSAGE_LEN + 1];
