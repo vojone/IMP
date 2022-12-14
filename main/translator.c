@@ -89,6 +89,24 @@ esp_err_t translator_init() {
     return ESP_OK;
 }
 
+
+/**
+ * @brief Converts uppercase letters to lowe case equivalent
+ * 
+ * @return char lower case letter if input was letter, otherwise returns input char
+ */
+char do_char_correction(char ch) {
+    char ret = ch;
+
+    if(ch > 'A' && ch < 'Z') {
+        ret = ch + ('a' - 'A');
+    }
+
+    return ret;
+}
+
+
+
 /**
  * @brief Translates letters fro queue to the control structures (that can be easily intepreted)
  * 
@@ -106,7 +124,7 @@ void translate(void *arg) {
             for(int i = 0; i < MAXIMUM_MESSAGE_LEN; i++) {
                 char cur_char = buffer[i];
 
-                const char *morse_code = char_lookup(cur_char); //Find translation for the current letter
+                const char *morse_code = char_lookup(do_char_correction(cur_char)); //Find translation for the current letter
                 if(!morse_code) {
                     ESP_LOGE(TRANSLATOR_TAG, "Unable to find character in lookup table!");
                     continue;
