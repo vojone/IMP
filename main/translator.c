@@ -23,7 +23,7 @@ SemaphoreHandle_t out_queue_sem = NULL;
  * @brief Performs translation of character to the sequence of . and - (or /)
  * 
  * @param tb_tr char to be translated
- * @return const char* translated sequence
+ * @return const char* translated sequence or NULL if letter was not found
  */
 const char *char_lookup(char tb_tr) {
     static translation_t tr_tab[] = {
@@ -43,13 +43,15 @@ const char *char_lookup(char tb_tr) {
         { .ch = 'y', .mc = "-.--"},     { .ch = 'z', .mc = "--.."},     { .ch = 0, .mc = NULL}, 
     };
 
-    static const size_t approx_middle_i = 19; //Aproximately middle of the tab (optimization, BUT TABLE MUST BE ORDERED!)
-    static translation_t * approx_middle = &(tr_tab[approx_middle_i]);
+    static const size_t approx_middle_i = 19; //Aproximately middle of the tab (just optimization, TABLE MUST BE CORRECTLY ORDERED BY ASCII codes!)
+    static translation_t * approx_middle = &(tr_tab[approx_middle_i]); //Ptr to the approx middle of the tab
 
     int i = approx_middle_i;
+
+    //Perform seraching from the middle in the right direction until the stop is found (THERE MUST BE STOPS IN THE TABLE)
     for(; tr_tab[i].ch && tr_tab[i].mc && tr_tab[i].ch != tb_tr; tb_tr < approx_middle->ch ? i-- : i++);
 
-    if(tr_tab[i].ch && tr_tab[i].mc) {
+    if(tr_tab[i].ch && tr_tab[i].mc) { //Letter was found in the table
         return tr_tab[i].mc;
     }
     else {
@@ -118,7 +120,7 @@ void translate(void *arg) {
     while(1) {
         //Try get letter (buffer) from the queue
         if(xQueueReceive(queue, buffer, (TickType_t)5)) { //5 ticks block if letter is not currently available
-            printf("Read %s from letter queue\n", buffer);
+            ESP_LOGI(MODULE_TAG, "Read %s from letter queue, translating to morse code\n", buffer);
 
             //Translate every letter in the buffer
             for(int i = 0; i < MAXIMUM_MESSAGE_LEN; i++) {
@@ -134,16 +136,16 @@ void translate(void *arg) {
                     if(xSemaphoreTake(out_queue_sem, portMAX_DELAY) == pdTRUE) {
 
                         for(int j = 0; morse_code[j]; j++) {
-                            out_control_t out_c = { .buzz_state = 0, .led_state = 0, .gap = GAP_BETWEEN_LETTERS};
+                            out_control_t out_c = { .buzz_state = 0, .led_state = 0, .gap = GAP_BETWEEN_SYMBOLS};
                             switch(morse_code[j]) {
                                 case '.':
-                                    out_c.buzz_state = 1; //Beep interval for .
+                                    out_c.buzz_state = DOT_BUZZER_INT; //Beep interval for .
                                     break;
                                 case '-' :
-                                    out_c.buzz_state = 3; //Beep interval for -
+                                    out_c.buzz_state = DASH_BUZZER_INT; //Beep interval for -
                                     break;
                                 default:
-                                    out_c.led_state = 1; //Led interval for other chars (/)
+                                    out_c.led_state = SLASH_LED_INT; //Led interval for other chars (/)
                                     break;
                             }
 
@@ -156,7 +158,7 @@ void translate(void *arg) {
                         //The whole letter is tranlated so release the semaphore
                         xSemaphoreGive(out_queue_sem);
 
-                        ESP_LOGI(TRANSLATOR_TAG, "Translated to %s and written it to out control queue...", morse_code);
+                        ESP_LOGI(TRANSLATOR_TAG, "Translated to %s and written it to out control queue", morse_code);
                     }
                     else {
                         ESP_LOGI(TRANSLATOR_TAG, "Unable to obtain out_queue_sem! Skipping %c...", cur_char);

@@ -29,8 +29,14 @@
 
 #define MAXIMUM_OUT_CONTROL_NUM 4096 //< Maximum length of the out control queue
 
-//Determines empty time interval between letters (in_ms = BASE_TIME_INT_MS * GAP_BETWEEN_LETTERS)
-#define GAP_BETWEEN_LETTERS 1
+
+//Determines the length of control intervals for symbols (the real time depends on timer and ISR that processes out control structures)
+#define DOT_BUZZER_INT 1
+#define DASH_BUZZER_INT 3
+#define SLASH_LED_INT 1
+
+//Determines empty time interval between letters (the real time depends on timer and ISR that processes out control structures)
+#define GAP_BETWEEN_SYMBOLS 1
 
 
 /**

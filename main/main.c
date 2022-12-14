@@ -24,6 +24,8 @@
 
 #define APP_NAME "MORSE_CODE" //App name (for logs)
 
+#define DEBUG
+
 
 #define LEDC_TIMER_RESOLUTION LEDC_TIMER_13_BIT //< Timer resolution for buzzer PWM
 #define LEDC_SPEED_MODE LEDC_LOW_SPEED_MODE //< Speed mode for buzzer PWM
@@ -140,6 +142,56 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
 
 
 /**
+ * @brief Sets the outputs due to given out control structure, also decrements counters in this structure
+ * and determines if there is something more to do
+ * 
+ * @param control Control structure for controlling outputs
+ * @param should_be_returned output argument, sets it to true if there is something more to do in control structure
+ */
+void set_outputs(out_control_t *control, bool *should_be_returned) {
+    esp_err_t err;
+    *should_be_returned = false; //Presume, that there is nothing to do
+
+    if(control->buzz_state > 0) { //Beep if related out control is greater than zero
+        control->buzz_state--;
+
+        *should_be_returned = true;
+
+        err = ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
+        ESP_ERROR_CHECK(err);
+    }
+    else {
+        err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
+        ESP_ERROR_CHECK(err);
+    }
+
+    if(control->led_state > 0) { //Turn led on if related out control is greater than zero
+        control->led_state--;
+
+        *should_be_returned = true;
+
+        #ifdef DEBUG 
+            ets_printf("turning led on"); 
+        #endif
+
+        err = gpio_set_level(LED_GPIO, 1);
+        ESP_ERROR_CHECK(err);
+    }
+    else {
+        err = gpio_set_level(LED_GPIO, 0);
+        ESP_ERROR_CHECK(err);
+    }
+
+    if(!*should_be_returned) { //After everything is done in out control start decrementing gap counter
+        if(control->gap > 0) {
+            control->gap--;
+            *should_be_returned = true;
+        }
+    }
+}
+
+
+/**
  * @brief ISR for interrupts from timer (they comes every BASE_TIME_INT_MS), translates out control sequence to beeping and blinking
  * 
  * @param args 
@@ -147,44 +199,17 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
  * @return false 
  */
 static bool IRAM_ATTR out_control_routine(void *args) {
-    esp_err_t err;
     BaseType_t higher_priority_task_woken = pdFALSE;
     out_control_t out_control;
     bool will_be_returned = false;
 
     if(xSemaphoreTakeFromISR(out_queue_sem, &higher_priority_task_woken) == pdTRUE) {
         if(xQueueReceiveFromISR(out_queue, &out_control, &higher_priority_task_woken)) {
-            ets_printf("Picked BUZZ %d LED %d\n", out_control.buzz_state, out_control.led_state);
+            #ifdef DEBUG 
+                ets_printf("Picked BUZZ %d LED %d GAP %d\n", out_control.buzz_state, out_control.led_state, out_control.gap);
+            #endif
 
-            if(out_control.buzz_state > 0) { //Beep if related out control is greater than zero
-                err = ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
-                ESP_ERROR_CHECK(err);
-            }
-            else {
-                err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
-                ESP_ERROR_CHECK(err);
-            }
-
-            if(out_control.led_state > 0) { //Turn led on if related out control is greater than zero
-                out_control.led_state--;
-
-                will_be_returned = true;
-
-                ets_printf("turning led on");
-                err = gpio_set_level(LED_GPIO, 1);
-                ESP_ERROR_CHECK(err);
-            }
-            else {
-                err = gpio_set_level(LED_GPIO, 0);
-                ESP_ERROR_CHECK(err);
-            }
-
-            if(!will_be_returned) { //After everything is done in out control start decrementing gap counter
-                if(out_control.gap > 0) {
-                    out_control.gap--;
-                    will_be_returned = true;
-                }
-            }
+            set_outputs(&out_control, &will_be_returned);
 
             if(will_be_returned == true) { //Return the outcontrol to out control queue if there is still something to do in it
                 xQueueSendToFrontFromISR(out_queue, &out_control, &higher_priority_task_woken);
