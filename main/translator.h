@@ -36,7 +36,7 @@
 #define SLASH_LED_INT 1
 
 //Determines empty time interval between letters (the real time depends on timer and ISR that processes out control structures)
-#define GAP_BETWEEN_SYMBOLS 1
+#define GAP_BETWEEN_LETTERS 1
 
 
 /**

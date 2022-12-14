@@ -136,7 +136,7 @@ void translate(void *arg) {
                     if(xSemaphoreTake(out_queue_sem, portMAX_DELAY) == pdTRUE) {
 
                         for(int j = 0; morse_code[j]; j++) {
-                            out_control_t out_c = { .buzz_state = 0, .led_state = 0, .gap = GAP_BETWEEN_SYMBOLS};
+                            out_control_t out_c = { .buzz_state = 0, .led_state = 0, .gap = 0};
                             switch(morse_code[j]) {
                                 case '.':
                                     out_c.buzz_state = DOT_BUZZER_INT; //Beep interval for .
@@ -147,6 +147,10 @@ void translate(void *arg) {
                                 default:
                                     out_c.led_state = SLASH_LED_INT; //Led interval for other chars (/)
                                     break;
+                            }
+
+                            if(morse_code[j+1] == '\0') { //Add gap if symbol is the last from the letter
+                                out_c.gap = GAP_BETWEEN_LETTERS;
                             }
 
                             //Send translated symbol to the out control queue
