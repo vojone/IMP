@@ -116,7 +116,7 @@ void translate(void *arg) {
                     if(xSemaphoreTake(out_queue_sem, portMAX_DELAY) == pdTRUE) {
 
                         for(int j = 0; morse_code[j]; j++) {
-                            out_control_t out_c = { .buzz_state = 0, .led_state = 0};
+                            out_control_t out_c = { .buzz_state = 0, .led_state = 0, .gap = GAP_BETWEEN_LETTERS};
                             switch(morse_code[j]) {
                                 case '.':
                                     out_c.buzz_state = 1; //Beep interval for .

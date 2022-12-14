@@ -25,9 +25,12 @@
 #define TRANSLATOR_TAG "TRANSLATOR" //< Module name
 
 #define MAXIMUM_MESSAGE_LEN 1 //< Maximum size of one buffer stored in message queue
-#define MAXIMUM_MESSAGE_NUM 1024 //< MAximum size of letter queue
+#define MAXIMUM_MESSAGE_NUM 1024 //< Maximum size of letter queue
 
 #define MAXIMUM_OUT_CONTROL_NUM 4096 //< Maximum length of the out control queue
+
+//Determines empty time interval between letters (in_ms = BASE_TIME_INT_MS * GAP_BETWEEN_LETTERS)
+#define GAP_BETWEEN_LETTERS 1
 
 
 /**
@@ -38,6 +41,7 @@
 typedef struct out_control {
     uint8_t buzz_state;
     uint8_t led_state;
+    uint8_t gap;
 } out_control_t;
 
 

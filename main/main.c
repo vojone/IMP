@@ -50,7 +50,6 @@ nvs_handle_t settings_nvs; //< Handle for storing settings (like volume)
 #define BASE_TIME_INT_MS 250
 
 
-
 /**
  * @brief Updates volume level of the morse receiver
  * 
@@ -158,10 +157,6 @@ static bool IRAM_ATTR out_control_routine(void *args) {
             ets_printf("Picked BUZZ %d LED %d\n", out_control.buzz_state, out_control.led_state);
 
             if(out_control.buzz_state > 0) { //Beep if related out control is greater than zero
-                out_control.buzz_state--;
-
-                will_be_returned = true;
-
                 err = ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
                 ESP_ERROR_CHECK(err);
             }
@@ -182,6 +177,13 @@ static bool IRAM_ATTR out_control_routine(void *args) {
             else {
                 err = gpio_set_level(LED_GPIO, 0);
                 ESP_ERROR_CHECK(err);
+            }
+
+            if(!will_be_returned) { //After everything is done in out control start decrementing gap counter
+                if(out_control.gap > 0) {
+                    out_control.gap--;
+                    will_be_returned = true;
+                }
             }
 
             if(will_be_returned == true) { //Return the outcontrol to out control queue if there is still something to do in it
