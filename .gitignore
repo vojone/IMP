@@ -2,4 +2,6 @@ build
 .vscode/*
 !.vscode/settings.json
 
+*.zip
+
 sdkconfig
