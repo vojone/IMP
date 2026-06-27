@@ -1,13 +1,21 @@
 /**
  * @file ble_receiver.c
- * 
+ *
  * @brief Implementation of bluetooth (BLE) module for morse code receiver
- * 
+ *
  * @author Vojtěch Dvořák (xdvora3o)
  * @date 2022-12-12
  */
 
 #include "ble_receiver.h"
+
+
+/**
+ * @brief Tab with charcteric handles
+ *
+ */
+uint16_t morse_code_char_handle_tab[MORSE_CODE_REC_CHAR_NUM];
+
 
 static void (*write_event_handler)(esp_ble_gatts_cb_param_t *) = NULL;
 static void (*add_char_cb)(uint16_t) = NULL;
@@ -39,13 +47,13 @@ struct gatts_profile_inst profile_tab[PROFILE_NUM] = { //< Table with all provid
 
 /**
  * @brief Value of letter to be beeped
- * 
+ *
  */
 uint8_t morse_code_letter_val[] = { 0x00 };
 
 /**
  * @brief Characteristic value for storing letter to be beeped
- * 
+ *
  */
 esp_attr_value_t morse_code_letter_char_val = {
     .attr_max_len = 1,
@@ -56,7 +64,7 @@ esp_attr_value_t morse_code_letter_char_val = {
 
 /**
  * @brief Characteristic value for changing volume of buzzer
- * 
+ *
  */
 uint8_t morse_code_volume_val[] = { 0x00 };
 
@@ -69,7 +77,7 @@ esp_attr_value_t morse_code_volume_char_val = {
 
 /**
  * @brief Characteristic value for aborting beeping
- * 
+ *
  */
 uint8_t morse_code_abort_val[] = { 0x00 };
 
@@ -83,7 +91,7 @@ esp_attr_value_t morse_code_abort_char_val = {
 
 /**
  * @brief Initialized structure for creating advertise packets (=advertising data content)
- * 
+ *
  */
 static esp_ble_adv_data_t adv_data = {
     .set_scan_rsp = false, //< Are this data for scan response?
@@ -93,8 +101,8 @@ static esp_ble_adv_data_t adv_data = {
     .max_interval = 0x0010, //< 0x0010*1.25 ms = 20 ms
     .appearance = 0x00, //< Unknown (due to https://specificationrefs.bluetooth.com/assigned-values/Appearance%20Values.pdf)
     .manufacturer_len = 0, //< Service manufacturer
-    .p_manufacturer_data = NULL, 
-    .service_data_len = 0, 
+    .p_manufacturer_data = NULL,
+    .service_data_len = 0,
     .p_service_data = NULL, //< Service data point
     .service_uuid_len = 0, //< Service UUID - there is no need to add it to advertising packets
     .p_service_uuid = NULL,
@@ -123,7 +131,7 @@ static esp_ble_adv_data_t scan_rsp_data = {
 
 /**
  * @brief Advertising parameters for GAP layer
- * 
+ *
  */
 static esp_ble_adv_params_t adv_params = {
     //Advertising interval = the time between advertising events
@@ -145,7 +153,7 @@ static uint8_t adv_config_done = 0; //<
 
 /**
  * @brief Prints bluetooth addres to the informational log
- * 
+ *
  */
 void print_bluetooth_addr() {
     const uint8_t *addr = esp_bt_dev_get_address();
@@ -156,11 +164,11 @@ void print_bluetooth_addr() {
 
 
 /**
- * @brief 
- * 
- * @param evt 
- * @param gatts_if 
- * @param params 
+ * @brief
+ *
+ * @param evt
+ * @param gatts_if
+ * @param params
  */
 void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *params) {
     esp_err_t err;
@@ -173,7 +181,7 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         profile_tab[MORSE_CODE_RECEIVER_ID].service_id.id.inst_id = 0x00;
         profile_tab[MORSE_CODE_RECEIVER_ID].service_id.id.uuid.len = ESP_UUID_LEN_16;
         profile_tab[MORSE_CODE_RECEIVER_ID].service_id.id.uuid.uuid.uuid16 = GATTS_SERVICE_UUID_MORSE_CODE_RECEIVER;
-        
+
         esp_ble_gap_set_device_name(DEVICE_NAME); //Set the name of this device
 
         err = esp_ble_gap_config_adv_data(&adv_data); //< Start setting our (custom) advertising data
@@ -181,7 +189,7 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
             ESP_LOGE(MODULE_TAG, "%s: esp_ble_gap_config_adv_data failed (%s)", __func__, esp_err_to_name(err));
         }
         adv_config_done |= ADV_CONFIG_FLAG; //< Set the flag to 1 to avoid advertising before all the data are set properly
-        
+
         err = esp_ble_gap_config_adv_data(&scan_rsp_data); //< Start setting our (custom) advertising response data
         if(err != ESP_OK) {
             ESP_LOGE(MODULE_TAG, "%s: esp_ble_gap_config_adv_data failed (%s)", __func__, esp_err_to_name(err));
@@ -189,17 +197,17 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         adv_config_done |= SCAN_RESPONSE_CONFIG_FLAG;
 
         esp_ble_gatts_create_service( //< Create service of the morse code application profile
-            gatts_if, 
-            &profile_tab[MORSE_CODE_RECEIVER_ID].service_id, 
+            gatts_if,
+            &profile_tab[MORSE_CODE_RECEIVER_ID].service_id,
             GATTS_NUM_HANDLE_MORSE_CODE
         );
 
         break;
-    
+
     case ESP_GATTS_CREATE_EVT: //< Create service with characteristics
         ESP_LOGI(MODULE_TAG, "CREATE_EVT, status=%d, serv_handle=%d", params->reg.status, params->create.service_handle);
         profile_tab[MORSE_CODE_RECEIVER_ID].service_handle = params->create.service_handle; //< Storing the generated service handle in profile tab (for ref the service later)
-    
+
         esp_ble_gatts_start_service(profile_tab[MORSE_CODE_RECEIVER_ID].service_handle);
 
         profile_tab[MORSE_CODE_RECEIVER_ID].char_uuid.len = ESP_UUID_LEN_16;
@@ -258,13 +266,13 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
     case ESP_GATTS_START_EVT: //< Service started
         ESP_LOGI(MODULE_TAG, "START_EVT, status=%d, handle=%d", params->start.status, params->start.service_handle);
         break;
-    
+
     case ESP_GATTS_ADD_CHAR_EVT: //< Characteristic were added
         ESP_LOGI(MODULE_TAG, "ADD_CHAR_EVT, status=%d, attr_handle=%d, service_handle=%d",
-            params->add_char.status, 
-            params->add_char.attr_handle, 
+            params->add_char.status,
+            params->add_char.attr_handle,
             params->add_char.service_handle
-        ); 
+        );
 
         //Read the initial value
         uint16_t length = 0;
@@ -315,8 +323,8 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
 
     case ESP_GATTS_ADD_CHAR_DESCR_EVT: //< Characteristic decriptor was added
         ESP_LOGI(MODULE_TAG, "ADD_DESCR_EVT, status=%d, attr_handle=%d, service_handle=%d",
-            params->add_char_descr.status, 
-            params->add_char_descr.attr_handle,  
+            params->add_char_descr.status,
+            params->add_char_descr.attr_handle,
             params->add_char_descr.service_handle
         );
         break;
@@ -334,14 +342,14 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         break;
 
     case ESP_GATTS_READ_EVT: //< Clien wants to read char
-        ESP_LOGI(MODULE_TAG, "READ_EVT, remote=" ESP_BD_ADDR_STR " read_handle=%d", 
+        ESP_LOGI(MODULE_TAG, "READ_EVT, remote=" ESP_BD_ADDR_STR " read_handle=%d",
             ESP_BD_ADDR_HEX(params->read.bda),
             params->read.handle
         );
 
-        esp_gatt_rsp_t response; 
+        esp_gatt_rsp_t response;
         memset(&response, 0, sizeof(esp_gatt_rsp_t)); //< Initialize the structure for the response
-        
+
         response.attr_value.handle = params->read.handle;
 
          //Read the initial value
@@ -361,7 +369,7 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         response.attr_value.value[0] = char_byte[0];
 
         esp_ble_gatts_send_response( //< Send the  response
-            gatts_if, 
+            gatts_if,
             params->read.conn_id,
             params->read.trans_id,
             ESP_GATT_OK,
@@ -372,7 +380,7 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
 
     case ESP_GATTS_WRITE_EVT:
         ESP_LOGI(MODULE_TAG, "WRITE_EVT, status=%d", params->rsp.status);
-        ESP_LOGI(MODULE_TAG, "WRITE_EVT, handle=%d, conn_id=%d, trans_id=%d", params->write.handle, params->write.conn_id, params->write.trans_id);
+        ESP_LOGI(MODULE_TAG, "WRITE_EVT, handle=%d, conn_id=%d, trans_id=%ld", params->write.handle, params->write.conn_id, params->write.trans_id);
         esp_log_buffer_hex(MODULE_TAG, params->write.value, params->write.len);
 
         if(!params->write.is_prep) {
@@ -382,13 +390,13 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
                     ESP_LOGI(MODULE_TAG, "Sending notification");
                     if(morse_code_vol_properties & ESP_GATT_CHAR_PROP_BIT_NOTIFY) {
                         //Only needed if it support notify
-                    } 
+                    }
                 }
                 else if(descr_val == 0x0002) {
                     ESP_LOGI(MODULE_TAG, "Sending indication");
                     if(morse_code_vol_properties & ESP_GATT_CHAR_PROP_BIT_INDICATE) {
                         //Only needed if it support indication
-                    } 
+                    }
                 }
                 else if(descr_val == 0x0000) {
                     ESP_LOGI(MODULE_TAG, "Sending notification and indication is disabled");
@@ -406,7 +414,7 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
             else {
                 ESP_LOGI(MODULE_TAG, "Short write");
                 esp_ble_gatts_send_response(gatts_if, params->write.conn_id, params->write.trans_id, ESP_GATT_OK, NULL);
-            }   
+            }
         }
         else {
             if(write_event_handler)
@@ -428,7 +436,7 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         break;
 
     case ESP_GATTS_DISCONNECT_EVT: //< Remote disconnects -> start advertising again
-        ESP_LOGI(MODULE_TAG, "DISCONNECT_EVT, remote=" ESP_BD_ADDR_STR, 
+        ESP_LOGI(MODULE_TAG, "DISCONNECT_EVT, remote=" ESP_BD_ADDR_STR,
             ESP_BD_ADDR_HEX(params->disconnect.remote_bda)
         );
 
@@ -452,9 +460,9 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
 
 /**
  * @brief Handling function for events that occurs on the GAP layer
- * 
- * @param evt 
- * @param params 
+ *
+ * @param evt
+ * @param params
  */
 void gap_event_handler(esp_gap_ble_cb_event_t evt, esp_ble_gap_cb_param_t *params) {
     switch (evt)
@@ -522,7 +530,7 @@ void gatts_event_handler(esp_gatts_cb_event_t evt, esp_gatt_if_t gatts_if, esp_b
     }
 
     for(int idx = 0; idx < PROFILE_NUM; idx++) { //< Search for the corresponding callback function (due to given gatts interface)
-        
+
         if(gatts_if == ESP_GATT_IF_NONE || gatts_if == profile_tab[idx].gatts_if) { //< The interface was not assigned to the current profile OR it is the interface of current profile
             if(profile_tab[idx].gatts_cb) { //< Check if the application profile has defined the callback
                 profile_tab[idx].gatts_cb(evt, gatts_if, params);
@@ -544,7 +552,7 @@ void register_add_char_cb(void (*add_char_cb_func)(uint16_t)) {
 esp_err_t bluetooth_init(void (*write_event_handler_func)(esp_ble_gatts_cb_param_t *), void (*add_char_cb_func)(uint16_t)) {
     esp_err_t err;
 
-    gpio_pad_select_gpio(CONNECTION_GPIO);
+    esp_rom_gpio_pad_select_gpio(CONNECTION_GPIO);
     err = gpio_set_direction(CONNECTION_GPIO, GPIO_MODE_OUTPUT);
     ESP_ERROR_CHECK(err);
 

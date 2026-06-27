@@ -17,6 +17,7 @@
 #include "driver/ledc.h"
 #include "driver/timer.h"
 #include "nvs.h"
+#include "esp_rom_sys.h"
 
 #include "ble_receiver.h"
 #include "translator.h"
@@ -33,17 +34,18 @@
 #define BUZZER_LEDC_TIMER LEDC_TIMER_0 //< Timer for buzzer PWM
 #define LEDC_TIMER_FREQ 5000 //< Timer frequency for buzzer PWM
 
-#define BUZZER_GPIO GPIO_NUM_5 
+#define BUZZER_GPIO GPIO_NUM_12
 #define LED_GPIO GPIO_NUM_14
 
 
 nvs_handle_t settings_nvs; //< Handle for storing settings (like volume)
 
 //Handle keys
-#define VOLUME_NVS_KEY "volume" 
+#define VOLUME_NVS_KEY "volume"
 #define SETTINGS_NVS_KEY "m_c_settings"
 
 //Timer settings
+#define TIMER_BASE_CLK 80000000
 #define TIMER_DIVIDER (16)
 #define TIMER_SCALE (TIMER_BASE_CLK / TIMER_DIVIDER)
 
@@ -54,7 +56,7 @@ nvs_handle_t settings_nvs; //< Handle for storing settings (like volume)
 
 /**
  * @brief Updates volume level of the morse receiver
- * 
+ *
  * @param new_volume The new volume level
  */
 void update_volume(uint8_t new_volume) {
@@ -87,8 +89,8 @@ void update_volume(uint8_t new_volume) {
 
 /**
  * @brief Write event handler for bluetooth module
- * 
- * @param params 
+ *
+ * @param params
  */
 void write_event_handler(esp_ble_gatts_cb_param_t *params) {
     char buffer[MAXIMUM_MESSAGE_LEN + 1];
@@ -144,7 +146,7 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
 /**
  * @brief Sets the outputs due to given out control structure, also decrements counters in this structure
  * and determines if there is something more to do
- * 
+ *
  * @param control Control structure for controlling outputs
  * @param should_be_returned output argument, sets it to true if there is something more to do in control structure
  */
@@ -170,8 +172,8 @@ void set_outputs(out_control_t *control, bool *should_be_returned) {
 
         *should_be_returned = true;
 
-        #ifdef DEBUG 
-            ets_printf("turning led on"); 
+        #ifdef DEBUG
+            esp_rom_printf("turning led on");
         #endif
 
         err = gpio_set_level(LED_GPIO, 1);
@@ -193,10 +195,10 @@ void set_outputs(out_control_t *control, bool *should_be_returned) {
 
 /**
  * @brief ISR for interrupts from timer (they comes every BASE_TIME_INT_MS), translates out control sequence to beeping and blinking
- * 
- * @param args 
- * @return true 
- * @return false 
+ *
+ * @param args
+ * @return true
+ * @return false
  */
 static bool IRAM_ATTR out_control_routine(void *args) {
     BaseType_t higher_priority_task_woken = pdFALSE;
@@ -205,15 +207,15 @@ static bool IRAM_ATTR out_control_routine(void *args) {
 
     if(xSemaphoreTakeFromISR(out_queue_sem, &higher_priority_task_woken) == pdTRUE) {
         if(xQueueReceiveFromISR(out_queue, &out_control, &higher_priority_task_woken)) {
-            #ifdef DEBUG 
-                ets_printf("Picked BUZZ %d LED %d GAP %d\n", out_control.buzz_state, out_control.led_state, out_control.gap);
+            #ifdef DEBUG
+                esp_rom_printf("Picked BUZZ %d LED %d GAP %d\n", out_control.buzz_state, out_control.led_state, out_control.gap);
             #endif
 
             set_outputs(&out_control, &will_be_returned);
 
             if(will_be_returned == true) { //Return the outcontrol to out control queue if there is still something to do in it
                 xQueueSendToFrontFromISR(out_queue, &out_control, &higher_priority_task_woken);
-            }   
+            }
         }
 
         xSemaphoreGiveFromISR(out_queue_sem, &higher_priority_task_woken);
@@ -227,7 +229,7 @@ static bool IRAM_ATTR out_control_routine(void *args) {
 
 /**
  * @brief Initialization of PWM (ledc) for buzzer
- * 
+ *
  * @return esp_err_t ESP_OK if everyhing went ok
  */
 esp_err_t ledc_init() {
@@ -276,7 +278,7 @@ esp_err_t ledc_init() {
 
 /**
  * @brief Initilization of timer for beeping and blinking
- * 
+ *
  * @return esp_err_t ESP_OK if everyhing went ok
  */
 esp_err_t out_control_timer_init() {
@@ -334,7 +336,7 @@ esp_err_t out_control_timer_init() {
 
 /**
  * @brief Restores the volume level after the reset
- * 
+ *
  * @return esp_err_t ESP_OK if everything went OK
  */
 esp_err_t restore_volume() {
@@ -348,7 +350,7 @@ esp_err_t restore_volume() {
 
         err = nvs_commit(settings_nvs);
         ESP_ERROR_CHECK(err);
-    }   
+    }
 
     if(err != ESP_OK) {
         ESP_LOGE(APP_NAME, "Volume restoration failed! (0x%x)", err - ESP_ERR_NVS_BASE);
@@ -363,8 +365,8 @@ esp_err_t restore_volume() {
 
 /**
  * @brief Initialization of volume characteristic after reset
- * 
- * @param char_handle 
+ *
+ * @param char_handle
  */
 void char_added_cb(uint16_t char_handle) {
     if(profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[VOLUME_CHAR] == char_handle) {
@@ -377,7 +379,7 @@ TaskHandle_t translator_handle = NULL;
 
 /**
  * @brief The main body of the app
- * 
+ *
  */
 void app_main(void) {
     esp_err_t err;
@@ -406,7 +408,7 @@ void app_main(void) {
     err = out_control_timer_init();
     ESP_ERROR_CHECK(err);
 
-    gpio_pad_select_gpio(LED_GPIO);
+    esp_rom_gpio_pad_select_gpio(LED_GPIO);
     err = gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
     ESP_ERROR_CHECK(err);
 

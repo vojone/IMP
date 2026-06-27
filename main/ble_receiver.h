@@ -25,21 +25,21 @@
 
 /**
  * @brief The name of this module
- * 
+ *
  */
 #define MODULE_TAG "BLE_REC"
 
 
 /**
  * @brief The name of this bluetooth device
- * 
+ *
  */
 #define DEVICE_NAME "Morse code - receiver"
 
 
 /**
  * @brief UUIDs
- * 
+ *
  */
 #define GATTS_SERVICE_UUID_MORSE_CODE_RECEIVER 0xabcd
 
@@ -56,24 +56,24 @@
 //1 service + 3 characteristics + 3 characteristic values + 3 characteristic descriptors
 
 /**
- * @brief Led pin for 
- * 
+ * @brief Led pin for
+ *
  */
 #define CONNECTION_GPIO GPIO_NUM_2
 
 /**
  * @brief Profile indexes
- * 
+ *
  */
 enum profiles {
     MORSE_CODE_RECEIVER_ID,
-    PROFILE_NUM,   
+    PROFILE_NUM,
 };
 
 
 /**
  * @brief Indexes of characteristics
- * 
+ *
  */
 enum morse_code_rec_chars {
     LETTER_CHAR, //< Characteristic for writing message
@@ -83,16 +83,10 @@ enum morse_code_rec_chars {
 };
 
 
-/**
- * @brief Tab with charcteric handles
- * 
- */
-uint16_t morse_code_char_handle_tab[MORSE_CODE_REC_CHAR_NUM];
-
 
 /**
  * @brief Element of GATT profile table
- * 
+ *
  */
 struct gatts_profile_inst {
     esp_gatts_cb_t gatts_cb;
@@ -112,7 +106,7 @@ struct gatts_profile_inst {
 
 /**
  * @brief Handling function of morse code app that operates on this GATT server
- * 
+ *
  * @param evt incoming event
  * @param gatts_if GATTS interface
  * @param param event parameters
@@ -122,14 +116,14 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
 
 /**
  * @brief Tabs with BLE profiles (we have only one service)
- * 
+ *
  */
 extern struct gatts_profile_inst profile_tab[];
 
 
 /**
- * @brief Inititializes the bluetooth module 
- * 
+ * @brief Inititializes the bluetooth module
+ *
  * @param write_event_handler_func Callback fro write GATT events
  * @param add_char_cb_func Callback for add char GATT event (can be used for initialization of characteristics values)
  * @return esp_err_t ESP_OK if eferything went OK

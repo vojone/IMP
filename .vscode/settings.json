@@ -28,5 +28,8 @@
         "*.inc": "c",
         "gpio.h": "c",
         "stdio.h": "c"
-    }
+    },
+    "idf.currentSetup": "C:\\esp\\v5.2.7\\esp-idf",
+    "idf.portWin": "COM3",
+    "idf.flashType": "DFU"
 }

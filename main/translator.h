@@ -40,9 +40,9 @@
 
 
 /**
- * @brief Control structure for controlling buzzer and led (e. g. if buzz_state is > 0, 
+ * @brief Control structure for controlling buzzer and led (e. g. if buzz_state is > 0,
  * it means that is should be turned on)
- * 
+ *
  */
 typedef struct out_control {
     uint8_t buzz_state;
@@ -53,7 +53,7 @@ typedef struct out_control {
 
 /**
  * @brief Translation unit stored in the lookup table
- * 
+ *
  */
 typedef struct translation {
     char ch; //< Character
@@ -66,16 +66,16 @@ extern QueueHandle_t queue; //< Queue of letters
 
 
 /**
- * @brief Handle for semaphore that should be checked before reading from the out control queue 
+ * @brief Handle for semaphore that should be checked before reading from the out control queue
  * (to letter consistency)
- * 
+ *
  */
 extern SemaphoreHandle_t out_queue_sem;
 
 
 /**
  * @brief Initilizes structures for translator
- * 
+ *
  * @return esp_err_t ESP_OK if everthing went OK
  */
 void translate(void *arg);
@@ -83,7 +83,7 @@ void translate(void *arg);
 
 /**
  * @brief Initilizes structures for translator
- * 
+ *
  * @return esp_err_t ESP_OK if everthing went OK
  */
 esp_err_t translator_init();
