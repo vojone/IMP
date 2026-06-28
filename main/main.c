@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <esp_types.h>
+#include <stdatomic.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -35,7 +37,8 @@
 #define LEDC_TIMER_FREQ 5000 //< Timer frequency for buzzer PWM
 
 #define BUZZER_GPIO GPIO_NUM_12
-#define LED_GPIO GPIO_NUM_14
+#define BUZZER_LED_GPIO GPIO_NUM_14
+#define LED_GPIO GPIO_NUM_27
 
 
 nvs_handle_t settings_nvs; //< Handle for storing settings (like volume)
@@ -51,7 +54,7 @@ nvs_handle_t settings_nvs; //< Handle for storing settings (like volume)
 
 
 //Base time interval (dettermines the length of one out_control interval)
-#define BASE_TIME_INT_MS 250
+#define BASE_TIME_INT_MS 100
 
 
 /**
@@ -88,6 +91,18 @@ void update_volume(uint8_t new_volume) {
 
 
 /**
+ * @brief Abort message translation
+ *
+ */
+void abort_message() {
+    if(queue)
+        xQueueReset(queue);
+    if(out_queue)
+        xQueueReset(out_queue);
+}
+
+
+/**
  * @brief Write event handler for bluetooth module
  *
  * @param params
@@ -99,6 +114,17 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
         ESP_LOGI(MODULE_TAG, "Writing to volume characteristic");
 
         update_volume(params->write.value[0]);
+    }
+    else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[BEEP_CHAR]) { //Beep
+        ESP_LOGI(MODULE_TAG, "Writing to beep characteristic");
+
+        abort_message();
+
+        esp_err_t err = ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
+        ESP_ERROR_CHECK(err);
+
+        err = gpio_set_level(BUZZER_LED_GPIO, 1);
+        ESP_ERROR_CHECK(err);
     }
     else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[LETTER_CHAR]) { //Letter (meesage) write
         ESP_LOGI(MODULE_TAG, "Writing to letter characteristic");
@@ -126,12 +152,12 @@ void write_event_handler(esp_ble_gatts_cb_param_t *params) {
     else if(params->write.handle == profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[ABORT_CHAR]) { //Abort char
         ESP_LOGI(MODULE_TAG, "Writing to abort characteristic");
 
-        if(queue)
-            xQueueReset(queue);
-        if(out_queue)
-            xQueueReset(out_queue);
+        abort_message();
 
         esp_err_t err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
+        ESP_ERROR_CHECK(err);
+
+        err = gpio_set_level(BUZZER_LED_GPIO, 0);
         ESP_ERROR_CHECK(err);
 
         err = gpio_set_level(LED_GPIO, 0);
@@ -161,9 +187,17 @@ void set_outputs(out_control_t *control, bool *should_be_returned) {
 
         err = ledc_update_duty(LEDC_SPEED_MODE, BUZZER_CHANNEL);
         ESP_ERROR_CHECK(err);
+
+        // Turning on LED as well as buzzer
+        err = gpio_set_level(BUZZER_LED_GPIO, 1);
+        ESP_ERROR_CHECK(err);
     }
     else {
         err = ledc_stop(LEDC_SPEED_MODE, BUZZER_CHANNEL, 0);
+        ESP_ERROR_CHECK(err);
+
+        // Turning off LED as well as buzzer
+        err = gpio_set_level(BUZZER_LED_GPIO, 0);
         ESP_ERROR_CHECK(err);
     }
 
@@ -413,6 +447,14 @@ void app_main(void) {
     ESP_ERROR_CHECK(err);
 
     err = gpio_set_level(LED_GPIO, 0);
+    ESP_ERROR_CHECK(err);
+
+
+    esp_rom_gpio_pad_select_gpio(BUZZER_LED_GPIO);
+    err = gpio_set_direction(BUZZER_LED_GPIO, GPIO_MODE_OUTPUT);
+    ESP_ERROR_CHECK(err);
+
+    err = gpio_set_level(BUZZER_LED_GPIO, 0);
     ESP_ERROR_CHECK(err);
 
 

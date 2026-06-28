@@ -12,7 +12,10 @@ var BTserver = null; //BluetoothRemoteGATTServer
 var letterBTchar = null; //Characteristic of BTserver for writing letters
 var volumeBTchar = null; //Characteristic of BTserver for reading current volume
 var abortBTchar = null; //Characteristic of BTserver for aborting morse beeping
+var beepBTchar = null;
 var jobChain = null; //Chain of promises for BTserver (to avoid sending request when server is busy)
+
+var isBeeping = false;
 
 
 function isBtSupported() {
@@ -39,6 +42,7 @@ function disconnectedBtns() {
     document.getElementById('connect').disabled = false;
     document.getElementById('abort').disabled = true;
     document.getElementById('send').disabled = true;
+    document.getElementById('beep-button').disabled = true;
 }
 
 
@@ -51,11 +55,12 @@ function connectedBtns() {
     document.getElementById('connect').disabled = true;
     document.getElementById('abort').disabled = false;
     document.getElementById('send').disabled = false;
+    document.getElementById('beep-button').disabled = false;
 }
 
 
 /**
- * 
+ *
  * @returns {Promise}
  */
 function getBtAvailability() {
@@ -65,12 +70,12 @@ function getBtAvailability() {
 
 /**
  * Returns browser name (for determining if brower supports web bluetooth or not)
- * @param {string} userAgentString 
+ * @param {string} userAgentString
  * @returns string
  */
 function getBrowserName(userAgentString) {
     let browsers = ['Firefox', 'Chrome', 'Edg', 'Opera', 'Safari'];
-    
+
     let curBrowser = null;
     for(let i = 0; i < browsers.length; i++) {
         if(userAgentString.includes(browsers[i] + '/')) {
@@ -100,7 +105,7 @@ async function checkBtSupport() {
     const btAvailable = getBtAvailability();
 
     return await btAvailable.then(
-        (isAvailable) => { 
+        (isAvailable) => {
             if(!isAvailable) {
                 setStatus('Bluetooth is not available on this device!');
             }
@@ -112,7 +117,7 @@ async function checkBtSupport() {
 
 /**
  * Sets the state of connect button
- * @param {boolean} newState 
+ * @param {boolean} newState
  */
 function setConnectButtonState(newState = false) {
     document.getElementById('connect').disabled = newState;
@@ -152,6 +157,9 @@ async function connect() {
                         letterBTchar = chars[0];
                         volumeBTchar = chars[1];
                         abortBTchar = chars[2];
+                        beepBTchar = chars[3];
+
+                        isBeeping = false;
 
                         connectedBtns();
                         updateVolumeSlider();
@@ -190,6 +198,7 @@ function disconnect() {
         letterBTchar = null;
         volumeBTchar = null;
         abortBTchar = null;
+        beepBTchar = null;
     }
 }
 
@@ -217,7 +226,7 @@ function addWriteJob(char, bufferToBeSended) {
             resolve('Start');
         });
     }
-    
+
     jobChain = jobChain.then(
         () => char.writeValueWithoutResponse(Uint8Array.of(...bufferToBeSended)).catch((error) => {
             console.log(error);
@@ -232,6 +241,7 @@ function addWriteJob(char, bufferToBeSended) {
             letterBTchar = null;
             volumeBTchar = null;
             abortBTchar = null;
+            beepBTchar = null;
         })
     );
 
@@ -314,10 +324,54 @@ function send() {
     }
 }
 
+/**
+ * Writes beep characteristics
+ */
+function beep() {
+    if(beepBTchar != null && BTserver != null) {
+        addWriteJob(beepBTchar, [1]);
+    }
+}
+
+
+/**
+ * Starts Beeping
+ */
+function beepStart() {
+    if(beepBTchar != null && BTserver != null) {
+        if(!isBeeping) {
+            addWriteJob(beepBTchar, [1]);
+            isBeeping = true;
+        }
+    }
+    else {
+        setStatus('Disconnected');
+        setStatusClass('warning');
+
+        disconnectedBtns();
+    }
+}
+
+/**
+ * Stops beeping using abort event
+ */
+function beepStop() {
+    if(abortBTchar != null && BTserver != null) {
+        abort();
+        isBeeping = false;
+    }
+    else {
+        setStatus('Disconnected');
+        setStatusClass('warning');
+
+        disconnectedBtns();
+    }
+}
+
 
 /**
  * Handler for change volume event (it is needed to send the value to the ESP characteristic)
- * @param {event} event 
+ * @param {event} event
  */
 function volumeChanged(event) {
     if(volumeBTchar != null && BTserver != null) {
@@ -333,15 +387,23 @@ function volumeChanged(event) {
 
 /**
  * Handler for changing mode event
- * @param {*} event 
+ * @param {*} event
  */
 function modeChanged(event) {
+    console.log(event.target.value);
     if(event.target.value == 'type') {
         setTypeMode();
+        unsetBeepMode();
+        unsetBatchMode();
+    }
+    else if(event.target.value == 'beep') {
+        unsetTypeMode();
+        setBeepMode();
         unsetBatchMode();
     }
     else {
         unsetTypeMode();
+        unsetBeepMode();
         setBatchMode();
     }
 }
@@ -349,7 +411,7 @@ function modeChanged(event) {
 
 /**
  * Resolves the keydown event
- * @param {event} event 
+ * @param {event} event
  */
 function onKeyDown(event) {
     if(letterBTchar != null && BTserver != null) {
@@ -392,3 +454,16 @@ function unsetBatchMode() {
 }
 
 
+function setBeepMode() {
+    document.getElementById('beep').className = '';
+
+    document.addEventListener('keydown', beepStart);
+    document.addEventListener('keyup', beepStop);
+}
+
+function unsetBeepMode() {
+    document.getElementById('beep').className = 'hidden';
+
+    document.removeEventListener('keydown', beepStart);
+    document.removeEventListener('keyup', beepStop);
+}

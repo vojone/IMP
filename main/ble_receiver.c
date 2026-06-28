@@ -88,6 +88,15 @@ esp_attr_value_t morse_code_abort_char_val = {
 };
 
 
+uint8_t morse_code_beep_val[] = { 0x00 };
+
+esp_attr_value_t morse_code_beep_char_val = {
+    .attr_max_len = 1,
+    .attr_len = 1,
+    .attr_value = morse_code_abort_val,
+};
+
+
 
 /**
  * @brief Initialized structure for creating advertise packets (=advertising data content)
@@ -258,7 +267,24 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
             ESP_LOGE(MODULE_TAG, "%s: esp_ble_gatts_add_char failed (%s)", __func__, esp_err_to_name(err));
         }
         else {
-            ESP_LOGI(MODULE_TAG, "%s volume characteristic is adding!", __func__);
+            ESP_LOGI(MODULE_TAG, "%s abort characteristic is adding!", __func__);
+        }
+
+        profile_tab[MORSE_CODE_RECEIVER_ID].char_uuid.len = ESP_UUID_LEN_16;
+        profile_tab[MORSE_CODE_RECEIVER_ID].char_uuid.uuid.uuid16 = GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_BEEP; //< Setting the UUID of characteristic
+        err = esp_ble_gatts_add_char( //< Adding characteristic for reading and setting volume of buzzer
+            profile_tab[MORSE_CODE_RECEIVER_ID].service_handle,
+            &profile_tab[MORSE_CODE_RECEIVER_ID].char_uuid,
+            morse_code_abort_permissions,
+            morse_code_abort_properties,
+            &morse_code_beep_char_val, //< Buffer to store volume value
+            NULL
+        );
+        if(err != ESP_OK) {
+            ESP_LOGE(MODULE_TAG, "%s: esp_ble_gatts_add_char failed (%s)", __func__, esp_err_to_name(err));
+        }
+        else {
+            ESP_LOGI(MODULE_TAG, "%s beep characteristic is adding!", __func__);
         }
 
         break;
@@ -298,6 +324,10 @@ void gatts_profile_morse_code_event_handler(esp_gatts_cb_event_t evt, esp_gatt_i
         else if(params->add_char.char_uuid.uuid.uuid16 == GATTS_CHAR_UUID_MORSE_CODE_RECEIVER_ABORT) {
             profile_tab[MORSE_CODE_RECEIVER_ID].descr_uuid.uuid.uuid16 = GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_ABORT;
             profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[ABORT_CHAR] = params->add_char.attr_handle;
+        }
+        else if(params->add_char.char_uuid.uuid.uuid16 == GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_BEEP) {
+            profile_tab[MORSE_CODE_RECEIVER_ID].descr_uuid.uuid.uuid16 = GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_BEEP;
+            profile_tab[MORSE_CODE_RECEIVER_ID].char_handle_tab[BEEP_CHAR] = params->add_char.attr_handle;
         }
         else {
             profile_tab[MORSE_CODE_RECEIVER_ID].descr_uuid.uuid.uuid16 = GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_VOL;

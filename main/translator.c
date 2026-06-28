@@ -11,9 +11,9 @@ QueueHandle_t queue = NULL; //< Queue of letters
 
 
 /**
- * @brief Handle for semaphore that should be checked before reading from the out control queue 
+ * @brief Handle for semaphore that should be checked before reading from the out control queue
  * (to letter consistency)
- * 
+ *
  */
 SemaphoreHandle_t out_queue_sem = NULL;
 
@@ -21,26 +21,26 @@ SemaphoreHandle_t out_queue_sem = NULL;
 
 /**
  * @brief Performs translation of character to the sequence of . and - (or /)
- * 
+ *
  * @param tb_tr char to be translated
  * @return const char* translated sequence or NULL if letter was not found
  */
 const char *char_lookup(char tb_tr) {
     static translation_t tr_tab[] = {
-        { .ch = 0, .mc = NULL}, 
-        { .ch = ' ', .mc = "/"},       { .ch = '.', .mc = "//"},        { .ch = '1', .mc = ".----"}, 
-        { .ch = '2', .mc = "..---"},    { .ch = '3', .mc = "...--"},    { .ch = '4', .mc = "....-"}, 
-        { .ch = '5', .mc = "....."},    { .ch = '6', .mc = "-...."},    { .ch = '7', .mc = "--..."}, 
-        { .ch = '8', .mc = "---.."},    { .ch = '9', .mc = "----."},    { .ch = '0', .mc = "-----"},  
-        { .ch = 'a', .mc = ".-"},       { .ch = 'b', .mc = "-..."},     { .ch = 'c', .mc = "-.-."}, 
-        { .ch = 'd', .mc = "-.."},      { .ch = 'e', .mc = "."},        { .ch = 'f', .mc = "..-."},   
-        { .ch = 'g', .mc = "--."},      { .ch = 'h', .mc = "...."},     { .ch = 'i', .mc = ".."},      
-        { .ch = 'j', .mc = ".---"},     { .ch = 'k', .mc = "-.-"},      { .ch = 'l', .mc = ".-.."},     
-        { .ch = 'm', .mc = "--"},       { .ch = 'n', .mc = "-."},       { .ch = 'o', .mc = "---"},      
-        { .ch = 'p', .mc = ".--."},     { .ch = 'q', .mc = "--.-"},     { .ch = 'r', .mc = ".-."},  
-        { .ch = 's', .mc = "..."},      { .ch = 't', .mc = "-"},        { .ch = 'u', .mc = "..-"},  
-        { .ch = 'v', .mc = "...-"},     { .ch = 'w', .mc = ".--"},      { .ch = 'x', .mc = "-..-"}, 
-        { .ch = 'y', .mc = "-.--"},     { .ch = 'z', .mc = "--.."},     { .ch = 0, .mc = NULL}, 
+        { .ch = 0, .mc = NULL},
+        { .ch = ' ', .mc = "/"},       { .ch = '.', .mc = "//"},        { .ch = '1', .mc = ".----"},
+        { .ch = '2', .mc = "..---"},    { .ch = '3', .mc = "...--"},    { .ch = '4', .mc = "....-"},
+        { .ch = '5', .mc = "....."},    { .ch = '6', .mc = "-...."},    { .ch = '7', .mc = "--..."},
+        { .ch = '8', .mc = "---.."},    { .ch = '9', .mc = "----."},    { .ch = '0', .mc = "-----"},
+        { .ch = 'a', .mc = ".-"},       { .ch = 'b', .mc = "-..."},     { .ch = 'c', .mc = "-.-."},
+        { .ch = 'd', .mc = "-.."},      { .ch = 'e', .mc = "."},        { .ch = 'f', .mc = "..-."},
+        { .ch = 'g', .mc = "--."},      { .ch = 'h', .mc = "...."},     { .ch = 'i', .mc = ".."},
+        { .ch = 'j', .mc = ".---"},     { .ch = 'k', .mc = "-.-"},      { .ch = 'l', .mc = ".-.."},
+        { .ch = 'm', .mc = "--"},       { .ch = 'n', .mc = "-."},       { .ch = 'o', .mc = "---"},
+        { .ch = 'p', .mc = ".--."},     { .ch = 'q', .mc = "--.-"},     { .ch = 'r', .mc = ".-."},
+        { .ch = 's', .mc = "..."},      { .ch = 't', .mc = "-"},        { .ch = 'u', .mc = "..-"},
+        { .ch = 'v', .mc = "...-"},     { .ch = 'w', .mc = ".--"},      { .ch = 'x', .mc = "-..-"},
+        { .ch = 'y', .mc = "-.--"},     { .ch = 'z', .mc = "--.."},     { .ch = 0, .mc = NULL},
     };
 
     static const size_t approx_middle_i = 19; //Aproximately middle of the tab (just optimization, TABLE MUST BE CORRECTLY ORDERED BY ASCII codes!)
@@ -62,7 +62,7 @@ const char *char_lookup(char tb_tr) {
 
 /**
  * @brief Initilizes structures for translator
- * 
+ *
  * @return esp_err_t ESP_OK if everthing went OK
  */
 esp_err_t translator_init() {
@@ -94,7 +94,7 @@ esp_err_t translator_init() {
 
 /**
  * @brief Converts uppercase letters to lowe case equivalent
- * 
+ *
  * @return char lower case letter if input was letter, otherwise returns input char
  */
 char do_char_correction(char ch) {
@@ -111,7 +111,7 @@ char do_char_correction(char ch) {
 
 /**
  * @brief Translates letters fro queue to the control structures (that can be easily intepreted)
- * 
+ *
  * @param arg No args are necessary
  */
 void translate(void *arg) {

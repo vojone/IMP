@@ -52,8 +52,13 @@
 #define GATTS_CHAR_UUID_MORSE_CODE_RECEIVER_ABORT 0x0002
 #define GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_ABORT 0x0002
 
+#define GATTS_CHAR_UUID_MORSE_CODE_RECEIVER_BEEP 0x0003
+#define GATTS_DESCR_UIID_MORSE_CODE_RECEIVER_BEEP 0x0003
+
 #define GATTS_NUM_HANDLE_MORSE_CODE 10 //< The number of addresable attributes on a GATT server (service, characteristic, char_val, char_descriptor)
 //1 service + 3 characteristics + 3 characteristic values + 3 characteristic descriptors
+
+#define FAST_BLE //< Enables fast configuration of the BT receiver (but it is more power-demanding)
 
 /**
  * @brief Led pin for
@@ -78,7 +83,8 @@ enum profiles {
 enum morse_code_rec_chars {
     LETTER_CHAR, //< Characteristic for writing message
     VOLUME_CHAR, //< Characteristic for writing and reading volume
-    ABORT_CHAR,  //< Characteristic for abroting beeping
+    ABORT_CHAR,  //< Characteristic for aborting beeping
+    BEEP_CHAR,
     MORSE_CODE_REC_CHAR_NUM,
 };
 

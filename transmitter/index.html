@@ -167,6 +167,7 @@
                 <select onchange="modeChanged(event)">
                     <option value="type">Type-send</option>
                     <option value="batch">Batch transmission</option>
+                    <option value="beep">Beep</option>
                 </select>
             </div>
         </div>
@@ -176,6 +177,10 @@
         <div id="batch" class="hidden">
             <textarea id="message" placeholder="Your message..."></textarea>
             <input onclick="send()" type="button" id="send" class="info right" value="Send" disabled>
+
+        </div>
+        <div id="beep" class="hidden">
+            <input onmousedown="beepStart()" onmouseup="beepStop()" type="button" id="beep-button" class="info right" value="Beep" disabled>
 
         </div>
     </main>
