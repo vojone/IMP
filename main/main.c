@@ -54,7 +54,7 @@ nvs_handle_t settings_nvs; //< Handle for storing settings (like volume)
 
 
 //Base time interval (dettermines the length of one out_control interval)
-#define BASE_TIME_INT_MS 100
+#define BASE_TIME_INT_MS 200
 
 
 /**
